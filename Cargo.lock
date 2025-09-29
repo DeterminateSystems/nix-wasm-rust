@@ -100,18 +100,37 @@ dependencies = [
 ]
 
 [[package]]
-name = "hello-wasm"
+name = "libc"
+version = "0.2.176"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58f929b4d672ea937a23a1ab494143d968337a5f47e56d0815df1e0890ddf174"
+
+[[package]]
+name = "nix-wasm-plugin-fib"
 version = "0.1.0"
 dependencies = [
+ "nix-wasm-rust",
+]
+
+[[package]]
+name = "nix-wasm-plugin-ini"
+version = "0.1.0"
+dependencies = [
+ "nix-wasm-rust",
  "rust-ini",
+]
+
+[[package]]
+name = "nix-wasm-plugin-yaml"
+version = "0.1.0"
+dependencies = [
+ "nix-wasm-rust",
  "yaml-rust2",
 ]
 
 [[package]]
-name = "libc"
-version = "0.2.175"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
+name = "nix-wasm-rust"
+version = "0.1.0"
 
 [[package]]
 name = "once_cell"

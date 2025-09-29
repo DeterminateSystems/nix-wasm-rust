@@ -1,46 +1,5 @@
-mod abi;
-
-use crate::abi::{warn, Value};
-use abi::Type;
-use ini::Ini;
+use nix_wasm_rust::{Type, Value};
 use yaml_rust2::{yaml, Yaml, YamlEmitter, YamlLoader};
-
-#[no_mangle]
-pub extern "C" fn fib(arg: Value) -> Value {
-    warn("greetings from WASM!");
-
-    fn fib2(n: i64) -> i64 {
-        if n < 2 {
-            1
-        } else {
-            fib2(n - 1) + fib2(n - 2)
-        }
-    }
-
-    Value::make_int(fib2(arg.get_int()))
-}
-
-#[no_mangle]
-pub extern "C" fn fromINI(arg: Value) -> Value {
-    let s = arg.get_string();
-
-    let ini = Ini::load_from_str(&s).expect("Could not parse INI file");
-
-    let mut sections = vec![];
-
-    for (section_name, section) in ini.iter() {
-        let mut props_attrset = vec![];
-        for (prop_name, prop_value) in section {
-            props_attrset.push((prop_name, Value::make_string(prop_value)));
-        }
-        sections.push((
-            section_name.unwrap_or(""),
-            Value::make_attrset(&props_attrset),
-        ));
-    }
-
-    Value::make_attrset(&sections)
-}
 
 fn yaml_to_value(yaml: &Yaml) -> Value {
     match yaml {
@@ -108,7 +67,10 @@ fn to_yaml(v: Value) -> Yaml {
             }
             Yaml::Array(array)
         }
-        _ => panic!("Nix type {} cannot be serialized to YAML", v.get_type() as u64),
+        _ => panic!(
+            "Nix type {} cannot be serialized to YAML",
+            v.get_type() as u64
+        ),
     }
 }
 

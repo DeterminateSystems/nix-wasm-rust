@@ -1,3 +1,4 @@
 *.wasm
 result
 /target/
+*~
