@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.2505.*.tar.gz";
     flake-schemas.url = "https://flakehub.com/f/DeterminateSystems/flake-schemas/*.tar.gz";
+    nix.url = "github:DeterminateSystems/nix-priv/wasm";
   };
 
   outputs = { self, ... }@inputs:
@@ -30,7 +31,14 @@
           CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
           buildPhase = "cargo build --release";
 
-          checkPhase = "true";
+          checkPhase = ''
+            for i in nix-wasm-plugin-*/tests/*.nix; do
+              echo "running test $i..."
+              base="$(dirname $i)/$(basename $i .nix)"
+              nix eval --store dummy:// --offline --json -I plugins=target/wasm32-unknown-unknown/release --impure --file "$i" > "$base.out"
+              cmp "$base.exp" "$base.out"
+            done
+          '';
 
           installPhase = ''
             mkdir -p $out
@@ -44,6 +52,7 @@
             wasm-bindgen-cli
             wasm-pack
             binaryen
+            inputs.nix.packages.${system}.nix-cli
           ];
         };
       });
