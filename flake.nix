@@ -10,7 +10,7 @@
   outputs = { self, ... }@inputs:
     let
       cargoToml = builtins.fromTOML (builtins.readFile ./nix-wasm-rust/Cargo.toml);
-      supportedSystems = [ "aarch64-darwin" "aarch64-linux" "x86_64-darwin" "x86_64-linux" ];
+      supportedSystems = [ "aarch64-darwin" "x86_64-linux" ];
       forAllSystems = f: inputs.nixpkgs.lib.genAttrs supportedSystems (system: f {
         pkgs = import inputs.nixpkgs { inherit system; };
         inherit system;
@@ -66,6 +66,10 @@
             clippy
           ];
         });
+      });
+
+      checks = forAllSystems ({ pkgs, system }: rec {
+        build = self.packages.${system}.default;
       });
     };
 }

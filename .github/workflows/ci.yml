@@ -1,0 +1,29 @@
+name: "CI"
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: "write"
+  contents: "read"
+  pull-requests: "write"
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v3
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v10
+
+      - name: Set up FlakeHub Cache
+        uses: DeterminateSystems/flakehub-cache-action@main
+
+      - name: Build and test
+        run: |
+          nix flake check --all-systems --access-tokens "github.com=${{ secrets.GITHUB_TOKEN }}"
