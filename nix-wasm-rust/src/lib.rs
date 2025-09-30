@@ -126,7 +126,9 @@ impl Value {
             fn copy_list(value: ValueId, ptr: u32, len: usize);
         }
         unsafe {
-            copy_list(self.0, res.as_ptr() as u32, len);
+            if len > 0 {
+                copy_list(self.0, res.as_ptr() as u32, len);
+            }
         }
         res
     }
