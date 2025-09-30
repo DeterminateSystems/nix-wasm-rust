@@ -1,1 +1,0 @@
-{"":{},"Install":{"WantedBy":"multi-user.target"},"Service":{"Delegate":"yes","ExecStart":"nix-daemon --daemon","KillMode":"process","LimitNOFILE":"1048576","TasksMax":"1048576"},"Unit":{"Description":"Nix Daemon","RequiresMountsFor":"/nix/var/nix/db"}}
