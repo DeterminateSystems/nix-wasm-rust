@@ -27,8 +27,25 @@ pub extern "C" fn mandelbrot(_arg: Value) -> Value {
                 }
                 k += 1;
             }
-            let (r, g, b) = iter_to_color(k);
-            output.push_str(&format!("\x1b[48;2;{};{};{}m ", r, g, b));
+
+            // Smooth out the iteration count.
+            let k_smooth = if k < ITERATIONS {
+                let log_zn = (z.re * z.re + z.im * z.im).ln() / 2.0;
+                let nu = (log_zn / std::f64::consts::LN_2).ln() / std::f64::consts::LN_2;
+                k as f64 + 1.0 - nu
+            } else {
+                k as f64
+            };
+
+            let (r1, g1, b1) = iter_to_color(k);
+            let (r2, g2, b2) = iter_to_color((k_smooth + 1.0).floor() as u32);
+            let k_frac = k_smooth.fract();
+            output.push_str(&format!(
+                "\x1b[48;2;{};{};{}m ",
+                to_rgb(interpolate(r1, r2, k_frac)),
+                to_rgb(interpolate(g1, g2, k_frac)),
+                to_rgb(interpolate(b1, b2, k_frac))
+            ));
         }
         output.push_str("\x1b[0m\n"); // Reset color at end of line
     }
@@ -48,18 +65,22 @@ pub extern "C" fn mandelbrot(_arg: Value) -> Value {
 
 const ITERATIONS: u32 = 1000;
 
-fn iter_to_color(k: u32) -> (u8, u8, u8) {
+fn iter_to_color(k: u32) -> (f64, f64, f64) {
     if k >= 1000 {
-        (0, 0, 0) // Black for points in the set
+        (0.0, 0.0, 0.0) // Black for points in the set
     } else {
         let t = (k as f64 / ITERATIONS as f64).powf(0.45);
-        let r = (t * 2.0).clamp(0.0, 1.0);
-        let g = if t < 0.75 {
-            (t * 4.0).min(1.0)
-        } else {
-            1.0 - (t - 0.75) * 4.0
-        };
+        let r = (t * 4.0).clamp(0.0, 1.0);
+        let g = (t * 2.0).clamp(0.0, 1.0);
         let b = (1.0 - (t - 0.25) * 4.0).clamp(0.0, 1.0);
-        ((g * 255.0) as u8, (r * 255.0) as u8, (b * 255.0) as u8)
+        (r, g, b)
     }
+}
+
+fn to_rgb(x: f64) -> u8 {
+    (x * 255.0) as u8
+}
+
+fn interpolate(a: f64, b: f64, t: f64) -> f64 {
+    a + (b - a) * t
 }
