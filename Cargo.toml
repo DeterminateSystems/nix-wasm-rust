@@ -3,7 +3,8 @@ members = [
     "nix-wasm-rust",
     "nix-wasm-plugin-fib",
     "nix-wasm-plugin-ini",
-    "nix-wasm-plugin-yaml"
+    "nix-wasm-plugin-yaml",
+    "nix-wasm-plugin-mandelbrot",
 ]
 resolver = "2"
 
