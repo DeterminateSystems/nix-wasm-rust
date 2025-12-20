@@ -155,8 +155,10 @@ impl Value {
         }
         let len = unsafe { get_attrset_length(self.0) };
         let attrs: Vec<(ValueId, usize)> = vec![(0, 0); len];
-        unsafe {
-            copy_attrset(self.0, attrs.as_ptr() as u32, len);
+        if len > 0 {
+            unsafe {
+                copy_attrset(self.0, attrs.as_ptr() as u32, len);
+            }
         }
         let mut res = BTreeMap::new();
         for (attr_idx, (value, attr_len)) in attrs.iter().enumerate() {
