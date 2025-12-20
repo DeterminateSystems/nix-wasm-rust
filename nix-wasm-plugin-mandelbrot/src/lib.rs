@@ -1,22 +1,28 @@
 use nix_wasm_rust::Value;
 use num::complex::Complex64;
 
-#[no_mangle]
-pub extern "C" fn mandelbrot(_arg: Value) -> Value {
-    const MIN_R: f64 = -2.05;
-    const MAX_R: f64 = 0.5;
-    const MIN_I: f64 = 0.0;
-    const MAX_I: f64 = 1.15;
+const MIN_R: f64 = -2.05;
+const MAX_R: f64 = 0.5;
+const MIN_I: f64 = 0.0;
+const MAX_I: f64 = 1.15;
 
-    const WIDTH: usize = 120;
-    const HEIGHT: usize = ((MAX_I - MIN_I) / (MAX_R - MIN_R) * 0.6 * WIDTH as f64) as usize;
+#[no_mangle]
+pub extern "C" fn mandelbrot(arg: Value) -> Value {
+    let args = arg.get_attrset();
+
+    let width = args
+        .get("width")
+        .map(|v| v.get_int() as usize)
+        .unwrap_or(120);
+
+    let height = ((MAX_I - MIN_I) / (MAX_R - MIN_R) * 0.6 * width as f64) as usize;
 
     let mut output = String::new();
 
-    for r in 0..HEIGHT {
-        let ci = MIN_I + (MAX_I - MIN_I) * (HEIGHT - r - 1) as f64 / (HEIGHT as f64);
-        for i in 0..WIDTH {
-            let cr = MIN_R + (MAX_R - MIN_R) * i as f64 / (WIDTH as f64);
+    for r in 0..height {
+        let ci = MIN_I + (MAX_I - MIN_I) * (height - r) as f64 / (height as f64);
+        for i in 0..width {
+            let cr = MIN_R + (MAX_R - MIN_R) * i as f64 / (width as f64);
             let c = Complex64::new(cr, ci);
             let mut z = Complex64::new(0.0, 0.0);
             let mut k: u32 = 0;
