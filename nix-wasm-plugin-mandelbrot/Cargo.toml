@@ -8,3 +8,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 nix-wasm-rust = { path = "../nix-wasm-rust" }
+num = "0.4"

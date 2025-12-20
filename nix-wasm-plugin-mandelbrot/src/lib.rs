@@ -1,11 +1,12 @@
 use nix_wasm_rust::Value;
+use num::complex::Complex64;
 
 #[no_mangle]
 pub extern "C" fn mandelbrot(_arg: Value) -> Value {
-    const MIN_R: f64 = -2.1;
-    const MAX_R: f64 = 0.6;
+    const MIN_R: f64 = -2.05;
+    const MAX_R: f64 = 0.5;
     const MIN_I: f64 = 0.0;
-    const MAX_I: f64 = 1.2;
+    const MAX_I: f64 = 1.15;
 
     const WIDTH: usize = 120;
     const HEIGHT: usize = ((MAX_I - MIN_I) / (MAX_R - MIN_R) * 0.6 * WIDTH as f64) as usize;
@@ -16,14 +17,12 @@ pub extern "C" fn mandelbrot(_arg: Value) -> Value {
         let ci = MIN_I + (MAX_I - MIN_I) * r as f64 / (HEIGHT as f64);
         for i in 0..WIDTH {
             let cr = MIN_R + (MAX_R - MIN_R) * i as f64 / (WIDTH as f64);
-            let mut zr = 0.0;
-            let mut zi = 0.0;
+            let c = Complex64::new(cr, ci);
+            let mut z = Complex64::new(0.0, 0.0);
             let mut k = 0;
             while k < 1000 {
-                let tmp = zr * zr - zi * zi + cr;
-                zi = 2.0 * zr * zi + ci;
-                zr = tmp;
-                if zr * zr + zi * zi > 4.0 {
+                z = z * z + c;
+                if z.norm_sqr() > 4.0 {
                     break;
                 }
                 k += 1;
