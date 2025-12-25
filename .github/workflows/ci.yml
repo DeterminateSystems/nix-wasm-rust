@@ -26,4 +26,4 @@ jobs:
 
       - name: Build and test
         run: |
-          nix flake check --all-systems
+          nix flake check --all-systems --eval-cores 0 -L
