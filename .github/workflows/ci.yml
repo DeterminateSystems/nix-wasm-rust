@@ -26,4 +26,4 @@ jobs:
 
       - name: Build and test
         run: |
-          nix flake check --all-systems --access-tokens "github.com=${{ secrets.GITHUB_TOKEN }}"
+          nix flake check --all-systems
