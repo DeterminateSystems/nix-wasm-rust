@@ -154,17 +154,17 @@ impl Value {
             fn copy_attrname(value: ValueId, attr_idx: usize, ptr: u32, len: usize);
         }
         let len = unsafe { get_attrset_length(self.0) };
-        let attrs: Vec<(ValueId, usize)> = vec![(0, 0); len];
+        let mut attrs: Vec<(ValueId, usize)> = vec![(0, 0); len];
         if len > 0 {
             unsafe {
-                copy_attrset(self.0, attrs.as_ptr() as u32, len);
+                copy_attrset(self.0, attrs.as_mut_ptr() as u32, len);
             }
         }
         let mut res = BTreeMap::new();
         for (attr_idx, (value, attr_len)) in attrs.iter().enumerate() {
-            let buf: Vec<u8> = vec![0; *attr_len];
+            let mut buf: Vec<u8> = vec![0; *attr_len];
             unsafe {
-                copy_attrname(self.0, attr_idx, buf.as_ptr() as u32, *attr_len);
+                copy_attrname(self.0, attr_idx, buf.as_mut_ptr() as u32, *attr_len);
             }
             res.insert(
                 String::from_utf8(buf).expect("Nix attribute name should be UTF-8."),
