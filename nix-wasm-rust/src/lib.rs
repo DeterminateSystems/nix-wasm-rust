@@ -74,12 +74,12 @@ impl Value {
 
     pub fn get_string(&self) -> String {
         let len = self.get_string_length();
-        let buf: Vec<u8> = vec![0; len];
+        let mut buf: Vec<u8> = vec![0; len];
         extern "C" {
-            fn copy_string(value: ValueId, ptr: *const u8, len: usize);
+            fn copy_string(value: ValueId, ptr: *mut u8, len: usize);
         }
         unsafe {
-            copy_string(self.0, buf.as_ptr(), len);
+            copy_string(self.0, buf.as_mut_ptr(), len);
         }
         String::from_utf8(buf).expect("Nix string should be UTF-8.")
     }

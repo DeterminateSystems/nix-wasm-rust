@@ -72,7 +72,7 @@ pub extern "C" fn mandelbrot(arg: Value) -> Value {
 const ITERATIONS: u32 = 1000;
 
 fn iter_to_color(k: u32) -> (f64, f64, f64) {
-    if k >= 1000 {
+    if k >= ITERATIONS {
         (0.0, 0.0, 0.0) // Black for points in the set
     } else {
         let t = (k as f64 / ITERATIONS as f64).powf(0.45);
