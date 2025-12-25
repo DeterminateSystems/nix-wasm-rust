@@ -38,12 +38,12 @@
     },
     "flake-schemas": {
       "locked": {
-        "lastModified": 1721999734,
-        "narHash": "sha256-G5CxYeJVm4lcEtaO87LKzOsVnWeTcHGKbKxNamNWgOw=",
-        "rev": "0a5c42297d870156d9c57d8f99e476b738dcd982",
-        "revCount": 75,
+        "lastModified": 1761577921,
+        "narHash": "sha256-eK3/xbUOrxp9fFlei09XNjqcdiHXxndzrTXp7jFpOk8=",
+        "rev": "47849c7625e223d36766968cc6dc23ba0e135922",
+        "revCount": 107,
         "type": "tarball",
-        "url": "https://api.flakehub.com/f/pinned/DeterminateSystems/flake-schemas/0.1.5/0190ef2f-61e0-794b-ba14-e82f225e55e6/source.tar.gz"
+        "url": "https://api.flakehub.com/f/pinned/DeterminateSystems/flake-schemas/0.2.0/019a4a84-544d-7c59-b26d-e334e320c932/source.tar.gz"
       },
       "original": {
         "type": "tarball",
@@ -86,14 +86,14 @@
         "lastModified": 1766250125,
         "narHash": "sha256-uxyDdBVRNHKL6o6HAytv29/5Fj2AU0snT4EXJYR1sIQ=",
         "owner": "DeterminateSystems",
-        "repo": "nix-priv",
+        "repo": "nix-src",
         "rev": "d6d322bf2c955ed5044c470b4dff69441729761a",
         "type": "github"
       },
       "original": {
         "owner": "DeterminateSystems",
         "ref": "wasm",
-        "repo": "nix-priv",
+        "repo": "nix-src",
         "type": "github"
       }
     },
