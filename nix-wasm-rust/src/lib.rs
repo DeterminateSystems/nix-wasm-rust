@@ -11,7 +11,7 @@ pub fn warn(s: &str) {
 
 // FIXME: use externref for Values?
 #[repr(transparent)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Value(ValueId);
 
 type ValueId = u32;
@@ -73,22 +73,23 @@ impl Value {
     }
 
     pub fn get_string(&self) -> String {
-        let len = self.get_string_length();
-        let mut buf: Vec<u8> = vec![0; len];
         extern "C" {
-            fn copy_string(value: ValueId, ptr: *mut u8, len: usize);
+            fn copy_string(value: ValueId, ptr: *mut u8, max_len: usize) -> usize;
         }
         unsafe {
-            copy_string(self.0, buf.as_mut_ptr(), len);
+            // Optimistically call with a small buffer on the stack.
+            let mut buf = [0; 256];
+            let len = copy_string(self.0, buf.as_mut_ptr(), buf.len());
+            if len > buf.len() {
+                // If it didn't fit, allocate a buffer of the right size.
+                let mut buf = vec![0; len];
+                let len2 = copy_string(self.0, buf.as_mut_ptr(), buf.len());
+                assert!(len2 == len);
+                String::from_utf8(buf).expect("Nix string should be UTF-8.")
+            } else {
+                String::from_utf8(buf[0..len].to_vec()).expect("Nix string should be UTF-8.")
+            }
         }
-        String::from_utf8(buf).expect("Nix string should be UTF-8.")
-    }
-
-    pub fn get_string_length(&self) -> usize {
-        extern "C" {
-            fn get_string_length(value: ValueId) -> usize;
-        }
-        unsafe { get_string_length(self.0) }
     }
 
     pub fn make_bool(b: bool) -> Value {
@@ -120,24 +121,23 @@ impl Value {
     }
 
     pub fn get_list(&self) -> Vec<Value> {
-        let len = self.get_list_length();
-        let res: Vec<Value> = vec![Value(0); len];
         extern "C" {
-            fn copy_list(value: ValueId, ptr: u32, len: usize);
+            fn copy_list(value: ValueId, ptr: *mut Value, max_len: usize) -> usize;
         }
         unsafe {
-            if len > 0 {
-                copy_list(self.0, res.as_ptr() as u32, len);
+            // Optimistically call with a small buffer on the stack.
+            let mut buf = [Value(0); 64];
+            let len = copy_list(self.0, buf.as_mut_ptr(), buf.len());
+            if len > buf.len() {
+                // If it didn't fit, allocate a buffer of the right size.
+                let mut buf = vec![Value(0); len];
+                let len2 = copy_list(self.0, buf.as_mut_ptr(), buf.len());
+                assert!(len2 == len);
+                buf
+            } else {
+                buf[0..len].to_vec()
             }
         }
-        res
-    }
-
-    pub fn get_list_length(&self) -> usize {
-        extern "C" {
-            fn get_list_length(value: ValueId) -> usize;
-        }
-        unsafe { get_list_length(self.0) }
     }
 
     pub fn make_attrset(attrs: &[(&str, Value)]) -> Value {
@@ -147,24 +147,15 @@ impl Value {
         unsafe { make_attrset(attrs.as_ptr() as u32, attrs.len()) }
     }
 
-    pub fn get_attrset(&self) -> BTreeMap<String, Value> {
+    fn get_attrset_from_attrs(&self, attrs: &[(ValueId, usize)]) -> BTreeMap<String, Value> {
         extern "C" {
-            fn get_attrset_length(value: ValueId) -> usize;
-            fn copy_attrset(value: ValueId, ptr: u32, len: usize);
-            fn copy_attrname(value: ValueId, attr_idx: usize, ptr: u32, len: usize);
-        }
-        let len = unsafe { get_attrset_length(self.0) };
-        let mut attrs: Vec<(ValueId, usize)> = vec![(0, 0); len];
-        if len > 0 {
-            unsafe {
-                copy_attrset(self.0, attrs.as_mut_ptr() as u32, len);
-            }
+            fn copy_attrname(value: ValueId, attr_idx: usize, ptr: *mut u8, len: usize);
         }
         let mut res = BTreeMap::new();
         for (attr_idx, (value, attr_len)) in attrs.iter().enumerate() {
-            let mut buf: Vec<u8> = vec![0; *attr_len];
+            let mut buf = vec![0; *attr_len];
             unsafe {
-                copy_attrname(self.0, attr_idx, buf.as_mut_ptr() as u32, *attr_len);
+                copy_attrname(self.0, attr_idx, buf.as_mut_ptr(), *attr_len);
             }
             res.insert(
                 String::from_utf8(buf).expect("Nix attribute name should be UTF-8."),
@@ -172,5 +163,26 @@ impl Value {
             );
         }
         res
+    }
+
+    pub fn get_attrset(&self) -> BTreeMap<String, Value> {
+        extern "C" {
+            #[allow(improper_ctypes)]
+            fn copy_attrset(value: ValueId, ptr: *mut (ValueId, usize), max_len: usize) -> usize;
+        }
+        unsafe {
+            // Optimistically call with a small buffer on the stack.
+            let mut buf = [(0, 0); 32];
+            let len = copy_attrset(self.0, buf.as_mut_ptr(), buf.len());
+            if len > buf.len() {
+                // If it didn't fit, allocate a buffer of the right size.
+                let mut buf = vec![(0, 0); len];
+                let len2 = copy_attrset(self.0, buf.as_mut_ptr(), buf.len());
+                assert!(len2 == len);
+                self.get_attrset_from_attrs(&buf)
+            } else {
+                self.get_attrset_from_attrs(&buf[0..len])
+            }
+        }
     }
 }
