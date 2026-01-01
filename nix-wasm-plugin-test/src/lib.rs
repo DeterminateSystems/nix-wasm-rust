@@ -9,7 +9,7 @@ pub extern "C" fn range(arg: Value) -> Value {
 
     let mut list = vec![];
 
-    for i in start..end {
+    for i in start..=end {
         list.push(Value::make_int(i));
     }
 
@@ -34,4 +34,14 @@ pub extern "C" fn map(arg: Value) -> Value {
     }
 
     Value::make_list(&res)
+}
+
+#[no_mangle]
+pub extern "C" fn sum(arg: Value) -> Value {
+    Value::make_int(arg.get_list().iter().map(|v| v.get_int()).sum())
+}
+
+#[no_mangle]
+pub extern "C" fn double(arg: Value) -> Value {
+    Value::make_int(arg.get_int() * 2)
 }
