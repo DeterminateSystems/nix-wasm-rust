@@ -11,9 +11,7 @@ pub fn panic(s: &str) -> ! {
     extern "C" {
         fn panic(ptr: *const u8, len: usize) -> !;
     }
-    unsafe {
-        panic(s.as_ptr(), s.len())
-    }
+    unsafe { panic(s.as_ptr(), s.len()) }
 }
 
 pub fn warn(s: &str) {
@@ -158,9 +156,10 @@ impl Value {
 
     pub fn make_attrset(attrs: &[(&str, Value)]) -> Value {
         extern "C" {
-            fn make_attrset(ptr: u32, len: usize) -> Value;
+            #[allow(improper_ctypes)]
+            fn make_attrset(ptr: *const (&str, Value), len: usize) -> Value;
         }
-        unsafe { make_attrset(attrs.as_ptr() as u32, attrs.len()) }
+        unsafe { make_attrset(attrs.as_ptr(), attrs.len()) }
     }
 
     fn get_attrset_from_attrs(&self, attrs: &[(ValueId, usize)]) -> BTreeMap<String, Value> {
