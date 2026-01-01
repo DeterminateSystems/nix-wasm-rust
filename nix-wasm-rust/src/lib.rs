@@ -1,5 +1,21 @@
 use std::collections::BTreeMap;
 
+#[no_mangle]
+pub extern "C" fn nix_wasm_init_v1() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        panic(&format!("{}", panic_info));
+    }));
+}
+
+pub fn panic(s: &str) -> ! {
+    extern "C" {
+        fn panic(ptr: *const u8, len: usize) -> !;
+    }
+    unsafe {
+        panic(s.as_ptr(), s.len())
+    }
+}
+
 pub fn warn(s: &str) {
     extern "C" {
         fn warn(ptr: *const u8, len: usize);
