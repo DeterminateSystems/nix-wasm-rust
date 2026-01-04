@@ -1,4 +1,5 @@
 use nix_wasm_rust::Value;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 #[no_mangle]
 pub extern "C" fn range(arg: Value) -> Value {
@@ -44,4 +45,11 @@ pub extern "C" fn sum(arg: Value) -> Value {
 #[no_mangle]
 pub extern "C" fn double(arg: Value) -> Value {
     Value::make_int(arg.get_int() * 2)
+}
+
+#[no_mangle]
+pub extern "C" fn counter(_arg: Value) -> Value {
+    static COUNTER: AtomicI64 = AtomicI64::new(1);
+    let current = COUNTER.fetch_add(1, Ordering::SeqCst);
+    Value::make_int(current)
 }
