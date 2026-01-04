@@ -5,4 +5,4 @@ let
   sum = wasm "sum";
   double = wasm "double";
 in
-  sum (map { list = range { start = 0; end = 200; }; fun = double; })
+  sum (map { list = range { start = 0; end = 100000; }; fun = double; })
