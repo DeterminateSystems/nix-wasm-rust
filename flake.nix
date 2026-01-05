@@ -55,6 +55,8 @@
             inputs.nix.packages.${system}.nix-cli
           ];
         };
+
+        nix = inputs.nix.packages.${system}.nix-cli;
       });
 
       devShells = forAllSystems ({ pkgs, system }: rec {
