@@ -38,6 +38,26 @@ pub extern "C" fn strictMap(arg: Value) -> Value {
 }
 
 #[no_mangle]
+pub extern "C" fn lazyMap(arg: Value) -> Value {
+    let args = arg.get_attrset();
+
+    let fun = args.get("fun").expect("missing 'fun' argument");
+
+    let list = args
+        .get("list")
+        .expect("missing 'list' argument")
+        .get_list();
+
+    let mut res = vec![];
+
+    for v in list {
+        res.push(fun.lazy_call(&[v]));
+    }
+
+    Value::make_list(&res)
+}
+
+#[no_mangle]
 pub extern "C" fn sum(arg: Value) -> Value {
     Value::make_int(arg.get_list().iter().map(|v| v.get_int()).sum())
 }

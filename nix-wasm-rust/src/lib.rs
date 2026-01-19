@@ -213,4 +213,11 @@ impl Value {
         }
         unsafe { call_function(self.0, args.as_ptr(), args.len()) }
     }
+
+    pub fn lazy_call(&self, args: &[Value]) -> Value {
+        extern "C" {
+            fn make_app(fun: ValueId, ptr: *const Value, len: usize) -> Value;
+        }
+        unsafe { make_app(self.0, args.as_ptr(), args.len()) }
+    }
 }
