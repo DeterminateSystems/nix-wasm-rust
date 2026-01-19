@@ -1,8 +1,8 @@
 let 
   wasm = builtins.wasm <plugins/nix_wasm_plugin_test.wasm>;
-  map = wasm "map";
+  strictMap = wasm "strictMap";
   range = wasm "range";
   sum = wasm "sum";
   double = wasm "double";
 in
-  sum (map { list = range { start = 0; end = 100000; }; fun = double; })
+  sum (strictMap { list = range { start = 0; end = 100000; }; fun = double; })

@@ -18,7 +18,7 @@ pub extern "C" fn range(arg: Value) -> Value {
 }
 
 #[no_mangle]
-pub extern "C" fn map(arg: Value) -> Value {
+pub extern "C" fn strictMap(arg: Value) -> Value {
     let args = arg.get_attrset();
 
     let fun = args.get("fun").expect("missing 'fun' argument");
