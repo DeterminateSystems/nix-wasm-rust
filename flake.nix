@@ -54,6 +54,8 @@
             binaryen
             inputs.nix.packages.${system}.nix-cli
           ];
+
+          NIX_CONFIG = "extra-experimental-features = wasm-builtin";
         };
 
         nix = inputs.nix.packages.${system}.nix-cli;
