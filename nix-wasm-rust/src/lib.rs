@@ -14,13 +14,19 @@ pub fn panic(s: &str) -> ! {
     unsafe { panic(s.as_ptr(), s.len()) }
 }
 
-pub fn warn(s: &str) {
-    extern "C" {
-        fn warn(ptr: *const u8, len: usize);
-    }
-    unsafe {
-        warn(s.as_ptr(), s.len());
-    }
+#[macro_export]
+macro_rules! warn {
+    ( $( $t:tt )* ) => {
+        {
+            extern "C" {
+                fn warn(ptr: *const u8, len: usize);
+            }
+            unsafe {
+                let s = format!( $( $t )* );
+                warn(s.as_ptr(), s.len());
+            }
+        }
+    };
 }
 
 // FIXME: use externref for Values?
