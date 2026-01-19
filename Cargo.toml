@@ -6,6 +6,7 @@ members = [
     "nix-wasm-plugin-yaml",
     "nix-wasm-plugin-mandelbrot",
     "nix-wasm-plugin-test",
+    "nix-wasm-plugin-grep",
 ]
 resolver = "2"
 

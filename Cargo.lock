@@ -119,6 +119,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix-wasm-plugin-grep"
+version = "0.1.0"
+dependencies = [
+ "nix-wasm-rust",
+]
+
+[[package]]
 name = "nix-wasm-plugin-ini"
 version = "0.1.0"
 dependencies = [
