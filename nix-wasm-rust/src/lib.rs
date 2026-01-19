@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
 
 #[no_mangle]
 pub extern "C" fn nix_wasm_init_v1() {
@@ -112,6 +112,38 @@ impl Value {
         }
     }
 
+    /// Create a new path value relative to this one, within the same source tree.
+    pub fn make_path(&self, rel: &str) -> Value {
+        extern "C" {
+            fn make_path(base: ValueId, ptr: *const u8, len: usize) -> Value;
+        }
+        unsafe { make_path(self.0, rel.as_ptr(), rel.len()) }
+    }
+
+    pub fn get_path(&self) -> PathBuf {
+        extern "C" {
+            fn copy_path(value: ValueId, ptr: *mut u8, max_len: usize) -> usize;
+        }
+        unsafe {
+            // Optimistically call with a small buffer on the stack.
+            let mut buf = [0; 256];
+            let len = copy_path(self.0, buf.as_mut_ptr(), buf.len());
+            if len > buf.len() {
+                // If it didn't fit, allocate a buffer of the right size.
+                let mut buf = vec![0; len];
+                let len2 = copy_path(self.0, buf.as_mut_ptr(), buf.len());
+                assert!(len2 == len);
+                String::from_utf8(buf)
+                    .expect("Nix path should be UTF-8.")
+                    .into()
+            } else {
+                String::from_utf8(buf[0..len].to_vec())
+                    .expect("Nix path should be UTF-8.")
+                    .into()
+            }
+        }
+    }
+
     pub fn make_bool(b: bool) -> Value {
         extern "C" {
             fn make_bool(b: bool) -> Value;
@@ -219,5 +251,25 @@ impl Value {
             fn make_app(fun: ValueId, ptr: *const Value, len: usize) -> Value;
         }
         unsafe { make_app(self.0, args.as_ptr(), args.len()) }
+    }
+
+    pub fn read_file(&self) -> Vec<u8> {
+        extern "C" {
+            fn read_file(value: ValueId, ptr: *mut u8, max_len: usize) -> usize;
+        }
+        unsafe {
+            // Optimistically call with a small buffer on the stack.
+            let mut buf = [0; 1024];
+            let len = read_file(self.0, buf.as_mut_ptr(), buf.len());
+            if len > buf.len() {
+                // If it didn't fit, allocate a buffer of the right size.
+                let mut buf = vec![0; len];
+                let len2 = read_file(self.0, buf.as_mut_ptr(), buf.len());
+                assert!(len2 == len);
+                buf
+            } else {
+                buf[0..len].to_vec()
+            }
+        }
     }
 }
