@@ -2,11 +2,9 @@ use nix_wasm_rust::Value;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 #[no_mangle]
-pub extern "C" fn range(arg: Value) -> Value {
-    let args = arg.get_attrset();
-
-    let start = args.get("start").map(|v| v.get_int()).unwrap_or(0);
-    let end = args.get("end").map(|v| v.get_int()).unwrap_or(10);
+pub extern "C" fn range(args: Value) -> Value {
+    let start = args.get_attr("start").map(|v| v.get_int()).unwrap_or(0);
+    let end = args.get_attr("end").map(|v| v.get_int()).unwrap_or(10);
 
     let mut list = vec![];
 
@@ -18,13 +16,11 @@ pub extern "C" fn range(arg: Value) -> Value {
 }
 
 #[no_mangle]
-pub extern "C" fn strictMap(arg: Value) -> Value {
-    let args = arg.get_attrset();
-
-    let fun = args.get("fun").expect("missing 'fun' argument");
+pub extern "C" fn strictMap(args: Value) -> Value {
+    let fun = args.get_attr("fun").expect("missing 'fun' argument");
 
     let list = args
-        .get("list")
+        .get_attr("list")
         .expect("missing 'list' argument")
         .get_list();
 
@@ -38,13 +34,11 @@ pub extern "C" fn strictMap(arg: Value) -> Value {
 }
 
 #[no_mangle]
-pub extern "C" fn lazyMap(arg: Value) -> Value {
-    let args = arg.get_attrset();
-
-    let fun = args.get("fun").expect("missing 'fun' argument");
+pub extern "C" fn lazyMap(args: Value) -> Value {
+    let fun = args.get_attr("fun").expect("missing 'fun' argument");
 
     let list = args
-        .get("list")
+        .get_attr("list")
         .expect("missing 'list' argument")
         .get_list();
 

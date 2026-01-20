@@ -1,23 +1,20 @@
 use nix_wasm_rust::Value;
 
 #[no_mangle]
-pub extern "C" fn grep(arg: Value) -> Value {
-    let args = arg.get_attrset();
-
+pub extern "C" fn grep(args: Value) -> Value {
     let builtins = args
-        .get("builtins")
-        .expect("missing 'builtins' argument")
-        .get_attrset();
-    let path = args.get("path").expect("missing 'path' argument");
+        .get_attr("builtins")
+        .expect("missing 'builtins' argument");
+    let path = args.get_attr("path").expect("missing 'path' argument");
     let pattern = args
-        .get("pattern")
+        .get_attr("pattern")
         .expect("missing 'pattern' argument")
         .get_string();
 
-    let read_dir = builtins.get("readDir").unwrap();
+    let read_dir = builtins.get_attr("readDir").unwrap();
 
     let mut matches = vec![];
-    recurse(read_dir, &pattern, path, &mut matches);
+    recurse(&read_dir, &pattern, &path, &mut matches);
 
     Value::make_list(&matches)
 }

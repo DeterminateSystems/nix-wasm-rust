@@ -7,11 +7,9 @@ const MIN_I: f64 = 0.0;
 const MAX_I: f64 = 1.15;
 
 #[no_mangle]
-pub extern "C" fn mandelbrot(arg: Value) -> Value {
-    let args = arg.get_attrset();
-
+pub extern "C" fn mandelbrot(args: Value) -> Value {
     let width = args
-        .get("width")
+        .get_attr("width")
         .map(|v| v.get_int() as usize)
         .unwrap_or(120);
 

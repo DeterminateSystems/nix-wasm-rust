@@ -239,6 +239,18 @@ impl Value {
         }
     }
 
+    pub fn get_attr(&self, attr_name: &str) -> Option<Value> {
+        extern "C" {
+            fn get_attr(value: ValueId, ptr: *const u8, len: usize) -> ValueId;
+        }
+        let value_id = unsafe { get_attr(self.0, attr_name.as_ptr(), attr_name.len()) };
+        if value_id == 0 {
+            None
+        } else {
+            Some(Value(value_id))
+        }
+    }
+
     pub fn call(&self, args: &[Value]) -> Value {
         extern "C" {
             fn call_function(fun: ValueId, ptr: *const Value, len: usize) -> Value;
