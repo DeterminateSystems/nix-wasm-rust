@@ -26,7 +26,6 @@ fn yaml_to_value(yaml: &Yaml) -> Value {
             Value::make_attrset(&attrset)
         }
         Yaml::Null => Value::make_null(),
-        //_ => Value::make_string(&format!("unsupported: {:?}", yaml))
         _ => panic!("unimplemented YAML value: {:?}", yaml),
     }
 }
