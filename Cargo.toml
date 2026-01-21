@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "nix-wasm-rust",
+    "nix-wasm-plugin-fib",
+    "nix-wasm-plugin-ini",
+    "nix-wasm-plugin-yaml",
+    "nix-wasm-plugin-mandelbrot",
+    "nix-wasm-plugin-test",
+    "nix-wasm-plugin-grep",
+]
+resolver = "2"
+
+[profile.release]
+lto = true
+opt-level = 'z'
+strip = true
