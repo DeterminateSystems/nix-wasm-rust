@@ -1,0 +1,11 @@
+[package]
+name = "nix-wasm-plugin-ruby"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+nix-wasm-rust = { path = "../nix-wasm-rust" }
+artichoke-backend = { path = "/Users/surma/src/github.com/artichoke/artichoke/artichoke-backend", default-features = false, features = ["core-math"] }
