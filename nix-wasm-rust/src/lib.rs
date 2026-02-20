@@ -50,6 +50,10 @@ pub enum Type {
 }
 
 impl Value {
+    pub fn from_id(id: ValueId) -> Value {
+        Value(id)
+    }
+
     pub fn get_type(&self) -> Type {
         extern "C" {
             fn get_type(value: ValueId) -> Type;
@@ -283,5 +287,12 @@ impl Value {
                 buf[0..len].to_vec()
             }
         }
+    }
+
+    pub fn return_to_nix(&self) -> ! {
+        extern "C" {
+            fn return_to_nix(value: ValueId) -> !;
+        }
+        unsafe { return_to_nix(self.0) }
     }
 }
