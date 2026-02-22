@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.follows = "nix/nixpkgs";
     flake-schemas.url = "https://flakehub.com/f/DeterminateSystems/flake-schemas/*.tar.gz";
-    nix.url = "github:DeterminateSystems/nix-src/wasm";
+    nix.url = "github:DeterminateSystems/nix-src/main";
   };
 
   outputs = { self, ... }@inputs:
@@ -60,7 +60,7 @@
             '';
             workspaceVendor = rustPlatform.fetchCargoVendor {
               src = self;
-              hash = "sha256-JImJqCSQKc41F+qOBDBrYMOOIOXgLIG9lEtrY585sGY=";
+              hash = "sha256-c2jpj5YfRKIiIAwry0dOoNzAqW6YUdnHWsCe61t/New=";
             };
             stdlibVendor = rustPlatform.fetchCargoVendor {
               src = rustPlatform.rustcSrc;
@@ -86,30 +86,41 @@
 
           src = self;
 
-          CARGO_BUILD_TARGET = "wasm32-wasip1";
-          buildPhase = "cargo build --release --workspace -Z build-std=std,panic_abort";
+          buildPhase = ''
+            # Build pure-wasm plugins (no WASI)
+            cargo build --release --workspace --exclude nix-wasm-plugin-quickjs \
+              --target wasm32-unknown-unknown -Z build-std=std,panic_abort
+
+            # Build WASI plugins (QuickJS needs WASI for its C runtime)
+            RUSTFLAGS="-L ${wasiSdk}/share/wasi-sysroot/lib/wasm32-wasip1" \
+              cargo build --release -p nix-wasm-plugin-quickjs \
+              --target wasm32-wasip1 -Z build-std=std,panic_abort
+          '';
 
           checkPhase = ''
-            # for i in nix-wasm-plugin-*/tests/*.nix; do
-            #   echo "running test $i..."
-            #   base="$(dirname $i)/$(basename $i .nix)"
-            #   nix eval --store dummy:// --offline --json --show-trace -I plugins=target/wasm32-wasip1/release --impure --eval-cores 0 --file "$i" > "$base.out"
-            #   cmp "$base.exp" "$base.out"
-            # done
+            mkdir -p plugins
+            cp target/wasm32-unknown-unknown/release/*.wasm plugins/
+            cp target/wasm32-wasip1/release/*.wasm plugins/
+
+            for i in nix-wasm-plugin-*/tests/*.nix; do
+              echo "running test $i..."
+              base="$(dirname $i)/$(basename $i .nix)"
+              nix eval --store dummy:// --offline --json --show-trace -I plugins=plugins --impure --eval-cores 0 --file "$i" > "$base.out"
+              cmp "$base.exp" "$base.out"
+            done
           '';
-          dontCheck = true;
 
           installPhase = ''
             mkdir -p $out
-            for i in target/wasm32-wasip1/release/*.wasm; do
-              wasm-opt -O3 --enable-bulk-memory --enable-exception-handling --enable-nontrapping-float-to-int --enable-simd -o "$out/$(basename "$i")" "$i"
+            for dir in target/wasm32-unknown-unknown/release target/wasm32-wasip1/release; do
+              for i in $dir/*.wasm; do
+                [ -f "$i" ] && wasm-opt -O3 --enable-bulk-memory --enable-nontrapping-float-to-int --enable-simd -o "$out/$(basename "$i")" "$i"
+              done
             done
           '';
 
           nativeBuildInputs = [
             rustPackages.rustc.llvmPackages.lld
-            wasm-bindgen-cli
-            wasm-pack
             binaryen
             pkgs.llvmPackages.clang
             pkgs.llvmPackages.libclang
@@ -120,12 +131,9 @@
           LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           RUSTC = "${rustcWithSysroot}/bin/rustc";
           CC_wasm32_wasip1 = "${wasiSdk}/bin/clang";
-          CXX_wasm32_wasip1 = "${wasiSdk}/bin/clang++";
           AR_wasm32_wasip1 = "${wasiSdk}/bin/ar";
-          CFLAGS_wasm32_wasip1 = "--sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include -mexception-handling -mllvm -wasm-enable-sjlj";
-          CXXFLAGS_wasm32_wasip1 = "--sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include -mexception-handling -mllvm -wasm-enable-sjlj";
-          BINDGEN_EXTRA_CLANG_ARGS_wasm32_wasip1 = "-fvisibility=default --sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include -resource-dir ${wasiSdk}/lib/clang/19 -mexception-handling";
-          RUSTFLAGS = "-L ${wasiSdk}/share/wasi-sysroot/lib/wasm32-wasip1 -C target-feature=+exception-handling -C llvm-args=-wasm-enable-sjlj";
+          CFLAGS_wasm32_wasip1 = "--sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include";
+          BINDGEN_EXTRA_CLANG_ARGS_wasm32_wasip1 = "-fvisibility=default --sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include -resource-dir ${wasiSdk}/lib/clang/19";
           CARGO_TARGET_WASM32_WASIP1_LINKER = "${wasiSdk}/bin/ld.lld";
           RUSTC_BOOTSTRAP = "1";
           NIX_CONFIG = "extra-experimental-features = wasm-builtin";
