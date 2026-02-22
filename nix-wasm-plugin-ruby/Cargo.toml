@@ -8,4 +8,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 nix-wasm-rust = { path = "../nix-wasm-rust" }
-artichoke-backend = { path = "/Users/surma/src/github.com/artichoke/artichoke/artichoke-backend", default-features = false, features = ["core-math"] }
+artichoke-backend = { git = "https://github.com/artichoke/artichoke", rev = "dbeb76f881d1729a08a3e970cf57c205dcbfc03a", default-features = false, features = ["core-math"] }

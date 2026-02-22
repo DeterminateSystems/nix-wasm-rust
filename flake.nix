@@ -60,7 +60,7 @@
             '';
             workspaceVendor = rustPlatform.fetchCargoVendor {
               src = self;
-              hash = "sha256-XGlpRhMt1kHizzXPbzDOdiL87ESdP4UxqEzL0N80Vro=";
+              hash = "sha256-JImJqCSQKc41F+qOBDBrYMOOIOXgLIG9lEtrY585sGY=";
             };
             stdlibVendor = rustPlatform.fetchCargoVendor {
               src = rustPlatform.rustcSrc;
@@ -87,7 +87,7 @@
           src = self;
 
           CARGO_BUILD_TARGET = "wasm32-wasip1";
-          buildPhase = "cargo build --release -Z build-std=std,panic_abort";
+          buildPhase = "cargo build --release --workspace -Z build-std=std,panic_abort";
 
           checkPhase = ''
             # for i in nix-wasm-plugin-*/tests/*.nix; do
@@ -102,7 +102,7 @@
           installPhase = ''
             mkdir -p $out
             for i in target/wasm32-wasip1/release/*.wasm; do
-              wasm-opt -O3 -o "$out/$(basename "$i")" "$i"
+              wasm-opt -O3 --enable-bulk-memory --enable-exception-handling --enable-nontrapping-float-to-int --enable-simd -o "$out/$(basename "$i")" "$i"
             done
           '';
 
@@ -122,10 +122,10 @@
           CC_wasm32_wasip1 = "${wasiSdk}/bin/clang";
           CXX_wasm32_wasip1 = "${wasiSdk}/bin/clang++";
           AR_wasm32_wasip1 = "${wasiSdk}/bin/ar";
-          CFLAGS_wasm32_wasip1 = "--sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include";
-          CXXFLAGS_wasm32_wasip1 = "--sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include";
-          BINDGEN_EXTRA_CLANG_ARGS_wasm32_wasip1 = "-isystem ${wasiSdk}/lib/clang/19/include -resource-dir ${wasiSdk}/lib/clang/19";
-          RUSTFLAGS = "-L ${wasiSdk}/share/wasi-sysroot/lib/wasm32-wasip1";
+          CFLAGS_wasm32_wasip1 = "--sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include -mexception-handling -mllvm -wasm-enable-sjlj";
+          CXXFLAGS_wasm32_wasip1 = "--sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include -mexception-handling -mllvm -wasm-enable-sjlj";
+          BINDGEN_EXTRA_CLANG_ARGS_wasm32_wasip1 = "-fvisibility=default --sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include -resource-dir ${wasiSdk}/lib/clang/19 -mexception-handling";
+          RUSTFLAGS = "-L ${wasiSdk}/share/wasi-sysroot/lib/wasm32-wasip1 -C target-feature=+exception-handling -C llvm-args=-wasm-enable-sjlj";
           CARGO_TARGET_WASM32_WASIP1_LINKER = "${wasiSdk}/bin/ld.lld";
           RUSTC_BOOTSTRAP = "1";
           NIX_CONFIG = "extra-experimental-features = wasm-builtin";
