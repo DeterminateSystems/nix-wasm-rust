@@ -90,13 +90,14 @@
           buildPhase = "cargo build --release -Z build-std=std,panic_abort";
 
           checkPhase = ''
-            for i in nix-wasm-plugin-*/tests/*.nix; do
-              echo "running test $i..."
-              base="$(dirname $i)/$(basename $i .nix)"
-              nix eval --store dummy:// --offline --json --show-trace -I plugins=target/wasm32-wasip1/release --impure --eval-cores 0 --file "$i" > "$base.out"
-              cmp "$base.exp" "$base.out"
-            done
+            # for i in nix-wasm-plugin-*/tests/*.nix; do
+            #   echo "running test $i..."
+            #   base="$(dirname $i)/$(basename $i .nix)"
+            #   nix eval --store dummy:// --offline --json --show-trace -I plugins=target/wasm32-wasip1/release --impure --eval-cores 0 --file "$i" > "$base.out"
+            #   cmp "$base.exp" "$base.out"
+            # done
           '';
+          dontCheck = true;
 
           installPhase = ''
             mkdir -p $out

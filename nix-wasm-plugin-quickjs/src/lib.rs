@@ -1,4 +1,4 @@
-use nix_wasm_rust::{nix_wasm_init_v1, warn, Value};
+use nix_wasm_rust::{nix_wasm_init_v1, warn, wasi_arg, Value};
 use rquickjs::{Array, Context, Object, Runtime, Value as JsValue};
 use std::string::String as StdString;
 
@@ -56,9 +56,7 @@ fn js_value_to_nix(value: JsValue) -> Value {
     panic!("quickjs value type not supported: {:?}", value.type_of());
 }
 
-#[no_mangle]
-pub extern "C" fn eval(arg: Value) -> Value {
-    nix_wasm_init_v1();
+fn eval_impl(arg: Value) -> Value {
     let code = arg.get_string();
 
     let runtime = Runtime::new().unwrap_or_else(|err| fail("runtime init", err));
@@ -68,4 +66,17 @@ pub extern "C" fn eval(arg: Value) -> Value {
         let value: JsValue = ctx.eval(code).unwrap_or_else(|err| fail("eval", err));
         js_value_to_nix(value)
     })
+}
+
+#[no_mangle]
+pub extern "C" fn eval(arg: Value) -> Value {
+    nix_wasm_init_v1();
+    eval_impl(arg)
+}
+
+#[no_mangle]
+pub extern "C" fn _start() {
+    nix_wasm_init_v1();
+    let result = eval_impl(wasi_arg());
+    result.return_to_nix();
 }

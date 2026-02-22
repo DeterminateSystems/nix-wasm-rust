@@ -1,4 +1,4 @@
-builtins.wasm <plugins/nix_wasm_plugin_quickjs.wasm> "eval" ''
+builtins.wasi <plugins/nix_wasm_plugin_quickjs.wasm> ''
   ({
     num: 1,
     float: 1.5,

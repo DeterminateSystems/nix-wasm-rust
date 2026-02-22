@@ -1,10 +1,7 @@
 use artichoke_backend::prelude::{Eval, Value as ArtichokeValue};
-use nix_wasm_rust::{nix_wasm_init_v1, warn, Value};
+use nix_wasm_rust::{nix_wasm_init_v1, warn, wasi_arg, Value};
 
-#[no_mangle]
-pub extern "C" fn eval(arg: Value) -> Value {
-    nix_wasm_init_v1();
-
+fn eval_impl(arg: Value) -> Value {
     let code = arg.get_string();
     let mut interp = artichoke_backend::interpreter().unwrap_or_else(|err| {
         warn!("ruby interp init failed: {err}");
@@ -24,4 +21,17 @@ pub extern "C" fn eval(arg: Value) -> Value {
         });
 
     Value::make_string(&rendered)
+}
+
+#[no_mangle]
+pub extern "C" fn eval(arg: Value) -> Value {
+    nix_wasm_init_v1();
+    eval_impl(arg)
+}
+
+#[no_mangle]
+pub extern "C" fn _start() {
+    nix_wasm_init_v1();
+    let result = eval_impl(wasi_arg());
+    result.return_to_nix();
 }
