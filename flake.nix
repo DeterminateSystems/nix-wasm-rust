@@ -20,8 +20,9 @@
       packages = forAllSystems ({ pkgs, system }: rec {
         default = nix-wasm-plugins;
 
-        nix-wasm-plugins = with pkgs;
+        nix-wasm-plugin-quickjs = with pkgs;
           let
+            quickjsCargoToml = builtins.fromTOML (builtins.readFile ./nix-wasm-plugin-quickjs/Cargo.toml);
             rustPackages = pkgs.rustPackages_1_89;
             rustPlatform = rustPackages.rustPlatform;
             rustSysroot = runCommand "rust-sysroot" { } ''
@@ -78,29 +79,61 @@
               cp ${workspaceVendor}/.cargo/config.toml $out/.cargo/config.toml
             '';
           in rustPlatform.buildRustPackage {
+            pname = quickjsCargoToml.package.name;
+            version = quickjsCargoToml.package.version;
+
+            cargoLock.lockFile = ./Cargo.lock;
+            cargoDeps = cargoVendor;
+
+            src = self;
+
+            buildPhase = ''
+              RUSTFLAGS="-L ${wasiSdk}/share/wasi-sysroot/lib/wasm32-wasip1" \
+                cargo build --release -p nix-wasm-plugin-quickjs \
+                --target wasm32-wasip1 -Z build-std=std,panic_abort
+            '';
+
+            installPhase = ''
+              mkdir -p $out
+              for i in target/wasm32-wasip1/release/*.wasm; do
+                wasm-opt -O3 --enable-bulk-memory --enable-nontrapping-float-to-int --enable-simd -o "$out/$(basename "$i")" "$i"
+              done
+            '';
+
+            nativeBuildInputs = [
+              rustPackages.rustc.llvmPackages.lld
+              binaryen
+              llvmPackages.clang
+              llvmPackages.libclang
+            ];
+
+            WASI_SDK = "${wasiSdk}";
+            LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
+            RUSTC = "${rustcWithSysroot}/bin/rustc";
+            CC_wasm32_wasip1 = "${wasiSdk}/bin/clang";
+            AR_wasm32_wasip1 = "${wasiSdk}/bin/ar";
+            CFLAGS_wasm32_wasip1 = "--sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include";
+            BINDGEN_EXTRA_CLANG_ARGS_wasm32_wasip1 = "-fvisibility=default --sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include -resource-dir ${wasiSdk}/lib/clang/19";
+            CARGO_TARGET_WASM32_WASIP1_LINKER = "${wasiSdk}/bin/ld.lld";
+            RUSTC_BOOTSTRAP = "1";
+            doCheck = false;
+          };
+
+        nix-wasm-plugins = with pkgs; rustPlatform.buildRustPackage {
           pname = cargoToml.package.name;
           version = cargoToml.package.version;
 
           cargoLock.lockFile = ./Cargo.lock;
-          cargoDeps = cargoVendor;
 
           src = self;
 
-          buildPhase = ''
-            # Build pure-wasm plugins (no WASI)
-            cargo build --release --workspace --exclude nix-wasm-plugin-quickjs \
-              --target wasm32-unknown-unknown -Z build-std=std,panic_abort
-
-            # Build WASI plugins (QuickJS needs WASI for its C runtime)
-            RUSTFLAGS="-L ${wasiSdk}/share/wasi-sysroot/lib/wasm32-wasip1" \
-              cargo build --release -p nix-wasm-plugin-quickjs \
-              --target wasm32-wasip1 -Z build-std=std,panic_abort
-          '';
+          CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+          buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs";
 
           checkPhase = ''
             mkdir -p plugins
             cp target/wasm32-unknown-unknown/release/*.wasm plugins/
-            cp target/wasm32-wasip1/release/*.wasm plugins/
+            cp ${nix-wasm-plugin-quickjs}/*.wasm plugins/
 
             for i in nix-wasm-plugin-*/tests/*.nix; do
               echo "running test $i..."
@@ -112,30 +145,20 @@
 
           installPhase = ''
             mkdir -p $out
-            for dir in target/wasm32-unknown-unknown/release target/wasm32-wasip1/release; do
-              for i in $dir/*.wasm; do
-                [ -f "$i" ] && wasm-opt -O3 --enable-bulk-memory --enable-nontrapping-float-to-int --enable-simd -o "$out/$(basename "$i")" "$i"
-              done
+            for i in target/wasm32-unknown-unknown/release/*.wasm; do
+              wasm-opt -O3 -o "$out/$(basename "$i")" "$i"
             done
+            cp ${nix-wasm-plugin-quickjs}/*.wasm $out/
           '';
 
           nativeBuildInputs = [
-            rustPackages.rustc.llvmPackages.lld
+            rustc.llvmPackages.lld
+            wasm-bindgen-cli
+            wasm-pack
             binaryen
-            pkgs.llvmPackages.clang
-            pkgs.llvmPackages.libclang
             inputs.nix.packages.${system}.nix-cli
           ];
 
-          WASI_SDK = "${wasiSdk}";
-          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-          RUSTC = "${rustcWithSysroot}/bin/rustc";
-          CC_wasm32_wasip1 = "${wasiSdk}/bin/clang";
-          AR_wasm32_wasip1 = "${wasiSdk}/bin/ar";
-          CFLAGS_wasm32_wasip1 = "--sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include";
-          BINDGEN_EXTRA_CLANG_ARGS_wasm32_wasip1 = "-fvisibility=default --sysroot=${wasiSdk}/share/wasi-sysroot -isystem ${wasiSdk}/lib/clang/19/include -resource-dir ${wasiSdk}/lib/clang/19";
-          CARGO_TARGET_WASM32_WASIP1_LINKER = "${wasiSdk}/bin/ld.lld";
-          RUSTC_BOOTSTRAP = "1";
           NIX_CONFIG = "extra-experimental-features = wasm-builtin";
         };
 
@@ -143,17 +166,14 @@
       });
 
       devShells = forAllSystems ({ pkgs, system }: rec {
-        default = with pkgs;
-          let
-            rustPackages = pkgs.rustPackages_1_89;
-          in self.packages.${system}.default.overrideAttrs (attrs: {
-            nativeBuildInputs = attrs.nativeBuildInputs ++ [
-              wabt
-              rust-analyzer
-              rustPackages.rustfmt
-              rustPackages.clippy
-            ];
-          });
+        default = with pkgs; self.packages.${system}.default.overrideAttrs (attrs: {
+          nativeBuildInputs = attrs.nativeBuildInputs ++ [
+            wabt
+            rust-analyzer
+            rustfmt
+            clippy
+          ];
+        });
       });
 
       checks = forAllSystems ({ pkgs, system }: rec {
