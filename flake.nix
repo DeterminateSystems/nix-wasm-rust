@@ -39,25 +39,25 @@
               EOF
               chmod +x $out/bin/rustc
             '';
-            wasiSdkSuffix = if system == "aarch64-darwin" then "arm64-macos" else "x86_64-linux";
-            wasiSdkHash =
-              if system == "aarch64-darwin" then
-                "sha256-Hbpw5ai4R5n3o6qtklS45QsFbe3p7gtUmEmR+94mHeQ="
-              else
-                "sha256-/cyLxhFsfBBQxn4NrhLdbgHjU3YUjYhPnvquWJodcO8=";
-            wasiSdkSource = fetchzip {
-              url = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/wasi-sdk-24.0-${wasiSdkSuffix}.tar.gz";
-              hash = wasiSdkHash;
-              stripRoot = true;
-            };
-            wasiSdk = runCommand "wasi-sdk" { } ''
-              cp -R -L ${wasiSdkSource} $out
-              if [ -d $out/lib/clang ]; then
-                chmod -R u+w $out/lib/clang
-              fi
-              if [ -d $out/lib/clang/18 ] && [ ! -d $out/lib/clang/19 ]; then
-                ln -s $out/lib/clang/18 $out/lib/clang/19
-              fi
+            wasiCc = pkgs.pkgsCross.wasi32.stdenv.cc;
+            wasiLibc = pkgs.pkgsCross.wasi32.wasilibc;
+            wasiLibcDev = wasiLibc.dev;
+            wasiSysroot = runCommand "wasi-sysroot" { } ''
+              mkdir -p $out/include $out/lib/wasm32-wasip1
+              cp -R ${wasiLibcDev}/include/* $out/include/
+              cp -R ${wasiLibc}/lib/* $out/lib/
+              cp -R ${wasiLibc}/lib/* $out/lib/wasm32-wasip1/
+            '';
+            wasiSdk = runCommand "wasi-sdk-compat" { } ''
+              mkdir -p $out/bin $out/lib/clang/19 $out/share
+
+              ln -s ${wasiCc}/bin/wasm32-unknown-wasi-clang $out/bin/clang
+              ln -s ${wasiCc}/bin/wasm32-unknown-wasi-clang++ $out/bin/clang++
+              ln -s ${wasiCc}/bin/wasm32-unknown-wasi-ar $out/bin/ar
+              ln -s ${wasiCc}/bin/wasm32-unknown-wasi-ld.lld $out/bin/ld.lld
+
+              ln -s ${wasiCc}/resource-root/include $out/lib/clang/19/include
+              ln -s ${wasiSysroot} $out/share/wasi-sysroot
             '';
             workspaceVendor = rustPlatform.fetchCargoVendor {
               src = self;
