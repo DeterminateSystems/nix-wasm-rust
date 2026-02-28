@@ -8,7 +8,6 @@
       type = "github";
       owner = "DeterminateSystems";
       repo = "nix-src";
-      ref = "eelcodolstra/nix-282-allow-wasm-plugins-to-use-wasi";
     };
     fenix = {
       url = "https://flakehub.com/f/nix-community/fenix/0.1.*.tar.gz";
@@ -92,7 +91,7 @@
           }
           ''
             [[ $(nix eval --store dummy:// --offline --json --show-trace -I plugins=${self.packages.${system}.nix-wasi-plugins}/bin --impure --eval-cores 0 \
-              --expr 'builtins.wasi <plugins/nix-wasi-plugin-fib.wasm> 33') = 5702887 ]]
+              --expr 'builtins.wasm { path = <plugins/nix-wasi-plugin-fib.wasm>; } 33') = 5702887 ]]
             mkdir -p $out
           '';
       });
