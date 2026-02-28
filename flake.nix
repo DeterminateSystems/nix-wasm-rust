@@ -127,13 +127,17 @@
 
           src = self;
 
+          nix_wasm_plugin_quickjs = nix-wasm-plugin-quickjs;
+
           CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
           buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs";
 
           checkPhase = ''
             mkdir -p plugins
             cp target/wasm32-unknown-unknown/release/*.wasm plugins/
-            cp ${nix-wasm-plugin-quickjs}/*.wasm plugins/
+            if [[ -n $nix_wasm_plugin_quickjs ]]; then
+              cp $nix_wasm_plugin_quickjs/*.wasm plugins/
+            fi
 
             for i in nix-wasm-plugin-*/tests/*.nix; do
               echo "running test $i..."
@@ -148,7 +152,9 @@
             for i in target/wasm32-unknown-unknown/release/*.wasm; do
               wasm-opt -O3 -o "$out/$(basename "$i")" "$i"
             done
-            cp ${nix-wasm-plugin-quickjs}/*.wasm $out/
+            if [[ -n $nix_wasm_plugin_quickjs ]]; then
+              cp $nix_wasm_plugin_quickjs/*.wasm $out/
+            fi
           '';
 
           nativeBuildInputs = [
@@ -167,6 +173,7 @@
 
       devShells = forAllSystems ({ pkgs, system }: rec {
         default = with pkgs; self.packages.${system}.default.overrideAttrs (attrs: {
+          nix_wasm_plugin_quickjs = null;
           nativeBuildInputs = attrs.nativeBuildInputs ++ [
             wabt
             rust-analyzer
