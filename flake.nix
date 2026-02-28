@@ -20,9 +20,8 @@
       packages = forAllSystems ({ pkgs, system }: rec {
         default = nix-wasm-plugins;
 
-        nix-wasm-plugin-quickjs = with pkgs;
+        nix-wasi-plugins = with pkgs;
           let
-            quickjsCargoToml = builtins.fromTOML (builtins.readFile ./nix-wasm-plugin-quickjs/Cargo.toml);
             rustPackages = pkgs.rustPackages_1_89;
             rustPlatform = rustPackages.rustPlatform;
             rustSysroot = runCommand "rust-sysroot" { } ''
@@ -61,7 +60,7 @@
             '';
             workspaceVendor = rustPlatform.fetchCargoVendor {
               src = self;
-              hash = "sha256-c2jpj5YfRKIiIAwry0dOoNzAqW6YUdnHWsCe61t/New=";
+              hash = "sha256-vkTdv3StxslmBOKy8mFfz5afOiMjBujFd4IU6pkgqGc=";
             };
             stdlibVendor = rustPlatform.fetchCargoVendor {
               src = rustPlatform.rustcSrc;
@@ -79,17 +78,18 @@
               cp ${workspaceVendor}/.cargo/config.toml $out/.cargo/config.toml
             '';
           in rustPlatform.buildRustPackage {
-            pname = quickjsCargoToml.package.name;
-            version = quickjsCargoToml.package.version;
+            pname = "nix-wasi-plugins";
+            version = cargoToml.package.version;
 
             cargoLock.lockFile = ./Cargo.lock;
             cargoDeps = cargoVendor;
 
+            # FIXME: filter out the non-wasi plugins from the workspace.
             src = self;
 
             buildPhase = ''
               RUSTFLAGS="-L ${wasiSdk}/share/wasi-sysroot/lib/wasm32-wasip1" \
-                cargo build --release -p nix-wasm-plugin-quickjs \
+                cargo build --release -p nix-wasm-plugin-quickjs -p nix-wasm-plugin-fib-wasi \
                 --target wasm32-wasip1 -Z build-std=std,panic_abort
             '';
 
@@ -127,16 +127,16 @@
 
           src = self;
 
-          nix_wasm_plugin_quickjs = nix-wasm-plugin-quickjs;
+          nix_wasi_plugins = nix-wasi-plugins;
 
           CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-          buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs";
+          buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs --exclude nix-wasm-plugin-fib-wasi";
 
           checkPhase = ''
             mkdir -p plugins
             cp target/wasm32-unknown-unknown/release/*.wasm plugins/
-            if [[ -n $nix_wasm_plugin_quickjs ]]; then
-              cp $nix_wasm_plugin_quickjs/*.wasm plugins/
+            if [[ -n $nix_wasi_plugins ]]; then
+              cp $nix_wasi_plugins/*.wasm plugins/
             fi
 
             for i in nix-wasm-plugin-*/tests/*.nix; do
@@ -152,8 +152,8 @@
             for i in target/wasm32-unknown-unknown/release/*.wasm; do
               wasm-opt -O3 -o "$out/$(basename "$i")" "$i"
             done
-            if [[ -n $nix_wasm_plugin_quickjs ]]; then
-              cp $nix_wasm_plugin_quickjs/*.wasm $out/
+            if [[ -n $nix_wasi_plugins ]]; then
+              cp $nix_wasi_plugins/*.wasm $out/
             fi
           '';
 
@@ -173,7 +173,7 @@
 
       devShells = forAllSystems ({ pkgs, system }: rec {
         default = with pkgs; self.packages.${system}.default.overrideAttrs (attrs: {
-          nix_wasm_plugin_quickjs = null;
+          nix_wasi_plugins = null;
           nativeBuildInputs = attrs.nativeBuildInputs ++ [
             wabt
             rust-analyzer

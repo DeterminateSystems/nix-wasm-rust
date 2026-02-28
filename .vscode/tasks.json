@@ -8,7 +8,9 @@
 				"--release",
 				"--workspace",
 				"--exclude",
-				"nix-wasm-plugin-quickjs"
+				"nix-wasm-plugin-quickjs",
+				"--exclude",
+				"nix-wasm-plugin-fib-wasi"
 			],
 			"options": {
 				"env": {

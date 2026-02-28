@@ -1,0 +1,12 @@
+[package]
+name = "nix-wasm-plugin-fib-wasi"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "nix_wasm_plugin_fib_wasi"
+path = "src/main.rs"
+
+[dependencies]
+nix-wasm-rust = { path = "../nix-wasm-rust" }
+nix-wasm-plugin-fib = { path = "../nix-wasm-plugin-fib" }

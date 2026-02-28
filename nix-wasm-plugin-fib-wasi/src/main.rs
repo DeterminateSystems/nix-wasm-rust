@@ -23,7 +23,7 @@ fn main() {
 
     /* The argument value ID is passed via argv[1]. */
     let args: Vec<String> = env::args().collect();
-    let arg = Value::from_id(
+    let arg = Value::from_raw(
         args[1]
             .parse::<u32>()
             .expect("argv[1] should be a valid ValueId"),
