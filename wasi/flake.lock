@@ -145,16 +145,15 @@
         "nixpkgs-regression": "nixpkgs-regression"
       },
       "locked": {
-        "lastModified": 1771600547,
-        "narHash": "sha256-3Q/azBE+UgGYL3W5UE0nXCLxLo2MLiAG0NZi2vzG5mQ=",
+        "lastModified": 1772218272,
+        "narHash": "sha256-58OxqvVmSo7y5GuLrt1ogU8tmGvGgtijmaurHPZMSBs=",
         "owner": "DeterminateSystems",
         "repo": "nix-src",
-        "rev": "13061498efb05dd2895a88b966093b511272bf2d",
+        "rev": "fe3515c2e42b95fb250c22549367285191fb9f5d",
         "type": "github"
       },
       "original": {
         "owner": "DeterminateSystems",
-        "ref": "eelcodolstra/nix-282-allow-wasm-plugins-to-use-wasi",
         "repo": "nix-src",
         "type": "github"
       }
