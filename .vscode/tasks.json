@@ -5,7 +5,12 @@
 			"type": "cargo",
 			"command": "build",
 			"args": [
-				"--release"
+				"--release",
+				"--workspace",
+				"--exclude",
+				"nix-wasm-plugin-quickjs",
+				"--exclude",
+				"nix-wasm-plugin-fib-wasi"
 			],
 			"options": {
 				"env": {

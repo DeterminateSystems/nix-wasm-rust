@@ -36,6 +36,16 @@ pub struct Value(ValueId);
 
 type ValueId = u32;
 
+pub fn wasi_arg() -> Value {
+    let arg = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| panic("missing WASI argument"));
+    let value_id = arg
+        .parse::<ValueId>()
+        .unwrap_or_else(|err| panic(&format!("invalid WASI argument '{arg}': {err}")));
+    Value::from_raw(value_id)
+}
+
 #[repr(C)]
 pub enum Type {
     Int = 1,
@@ -50,8 +60,8 @@ pub enum Type {
 }
 
 impl Value {
-    pub fn from_id(id: ValueId) -> Value {
-        Value(id)
+    pub fn from_raw(value: ValueId) -> Value {
+        Value(value)
     }
 
     pub fn get_type(&self) -> Type {
