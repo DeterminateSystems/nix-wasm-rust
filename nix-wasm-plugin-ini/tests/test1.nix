@@ -1,1 +1,1 @@
-builtins.wasm <plugins/nix_wasm_plugin_ini.wasm> "fromINI" (builtins.readFile ./test1.ini)
+builtins.wasm { path = <plugins/nix_wasm_plugin_ini.wasm>; function = "fromINI"; } (builtins.readFile ./test1.ini)

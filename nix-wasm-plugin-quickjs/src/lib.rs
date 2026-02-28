@@ -21,7 +21,9 @@ fn js_value_to_nix(value: JsValue) -> Value {
         return Value::make_float(f);
     }
     if let Some(js_str) = value.as_string() {
-        let s = js_str.to_string().unwrap_or_else(|err| fail("string conversion", err));
+        let s = js_str
+            .to_string()
+            .unwrap_or_else(|err| fail("string conversion", err));
         return Value::make_string(&s);
     }
     if value.is_array() {

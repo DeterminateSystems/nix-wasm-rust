@@ -30,3 +30,4 @@ jobs:
       - name: Build and test
         run: |
           nix flake check --all-systems --eval-cores 0 -L
+          nix flake check ./wasi --all-systems --eval-cores 0 -L
