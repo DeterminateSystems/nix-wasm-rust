@@ -20,7 +20,7 @@ rec {
         prefix = "";
       }
       #{ root = /home/eelco/Dev/nix/src/libstore;
-      #  prefix = "libstore";
+      #  prefix = "";
       #}
     ];
     files = {
@@ -37,7 +37,7 @@ rec {
           #define HAVE_LIBCPUID 1
           #define HAVE_POSIX_FALLOCATE 1
         '';
-      "store-config-private.hh" = builtins.toFile "store-config-private.hh"
+      "store-config-private.hh" = pkgs.writeText "store-config-private.hh"
         ''
           #pragma once
           #define CAN_LINK_SYMLINK 1
@@ -58,7 +58,7 @@ rec {
           #define NIX_STORE_DIR "/nix/store"
           #define NIX_USE_WASMTIME 1
           #define PACKAGE_VERSION "2.33.3"
-          #define SANDBOX_SHELL "/nix/store/cbwbz05v2iqhn2d1w118y1rw97cqimjf-busybox-1.36.1/bin/busybox"
+          #define SANDBOX_SHELL "${pkgs.busybox}/bin/busybox"
         '';
       "util-unix-config-private.hh" = builtins.toFile "util-unix-config-private.hh"
         ''
