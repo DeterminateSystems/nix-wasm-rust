@@ -11,14 +11,40 @@ pub extern "C" fn cc(args: Value) -> Value {
     let builtins = args
         .get_attr("builtins")
         .expect("missing 'builtins' argument");
-    let path = args.get_attr("path").expect("missing 'path' argument");
+    let dirs = args.get_attr("dirs").expect("missing 'dirs' argument");
 
     let read_dir = builtins.get_attr("readDir").unwrap();
 
     // First pass: scan all .cc and .hh files, recording their direct includes.
     let mut cc_files: Vec<Value> = vec![];
     let mut all_files: HashMap<Value, File> = HashMap::new();
-    scan_files(&read_dir, &path, "", &mut cc_files, &mut all_files);
+    for entry in dirs.get_list() {
+        let root = entry.get_attr("root").expect("missing 'root' attribute");
+        let prefix = entry
+            .get_attr("prefix")
+            .expect("missing 'prefix' attribute")
+            .get_string();
+        scan_files(&read_dir, &root, &prefix, &mut cc_files, &mut all_files);
+    }
+
+    // Process explicit files: each key is a path (possibly with slashes),
+    // the value is the file's path value.
+    if let Some(files) = args.get_attr("files") {
+        for (name, file_val) in files.get_attrset() {
+            let contents = file_val.read_file();
+            let includes = extract_includes(&contents);
+            if name.ends_with(".cc") {
+                cc_files.push(file_val);
+            }
+            all_files.insert(
+                file_val,
+                File {
+                    path: name,
+                    includes,
+                },
+            );
+        }
+    }
 
     // Build a suffix map for efficient include resolution.
     // For a file "foo/bar/xyzzy/util.hh", this inserts:
@@ -40,6 +66,7 @@ pub extern "C" fn cc(args: Value) -> Value {
     let mut results = vec![];
     for cc_file_val in &cc_files {
         //warn!("processing {path}...", path = all_files[cc_file_val].path);
+        let cc_file = &all_files[cc_file_val];
         let mut all_includes: HashMap<String, Value> = HashMap::new();
         let mut visited = HashSet::new();
         collect_transitive_includes(
@@ -50,20 +77,17 @@ pub extern "C" fn cc(args: Value) -> Value {
             &mut visited,
         );
 
-        let mut sorted_includes: Vec<_> = all_includes.iter().collect();
-        sorted_includes.sort_by_key(|(include, _)| *include);
-        let include_values: Vec<Value> = sorted_includes
-            .iter()
-            .map(|(include, path_val)| {
-                Value::make_attrset(&[
-                    ("include", Value::make_string(include)),
-                    ("path", **path_val),
-                ])
+        let include_attrs: Vec<(&str, Value)> = all_includes
+            .values()
+            .map(|path_val| {
+                let inc_file = &all_files[path_val];
+                (inc_file.path.as_str(), *path_val)
             })
             .collect();
         let entry = Value::make_attrset(&[
-            ("file", *cc_file_val),
-            ("includes", Value::make_list(&include_values)),
+            ("src", *cc_file_val),
+            ("path", Value::make_string(&cc_file.path)),
+            ("includes", Value::make_attrset(&include_attrs)),
         ]);
         results.push(entry);
     }
@@ -88,7 +112,12 @@ fn scan_files(
         let file_type = file_type.get_string();
         match file_type.as_str() {
             "regular" => {
-                if name.ends_with(".cc") || name.ends_with(".hh") {
+                if name.ends_with(".cc")
+                    || name.ends_with(".hh")
+                    || name.ends_with(".h")
+                    || name.ends_with(".sb")
+                    || name.ends_with(".md")
+                {
                     let contents = child.read_file();
                     let includes = extract_includes(&contents);
                     if name.ends_with(".cc") {
