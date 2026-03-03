@@ -6,6 +6,44 @@ rec {
     function = "cc";
   };
 
+  compileCpp = source: runCommandCC
+    "${builtins.baseNameOf source.path}.o"
+    {
+      __structuredAttrs = true;
+      includes = source.includes;
+      srcPath = source.path;
+      src = source.src;
+      buildInputs = map (dep: depsMap.${dep}) source.deps;
+      inherit (source) deps;
+    }
+    ''
+      for name in "''${!includes[@]}"; do
+        mkdir -p "$(dirname "$name")"
+        ln -s "''${includes[$name]}" "$name"
+      done
+
+      srcDir="$(dirname "$srcPath")"
+      mkdir -p "$srcDir"
+      ln -s "$src" "$srcPath"
+
+      mkdir -p "$out/$srcDir"
+      # FIXME: figure out the -I flags automatically.
+      gcc -std=c++23 -O1 -c "$srcPath" -o "$out/$srcDir/$(basename "$srcPath").o" -I . -I include -I unix/include -I linux/include -I windows/include -I widecharwidth
+    '';
+
+  link = name: objects: runCommandCC
+    name
+    {
+      inherit objects;
+      buildInputs = map (dep: depsMap.${dep}) (builtins.concatLists (map (obj: obj.deps) objects));
+    }
+    ''
+      mkdir -p $out/lib
+      g++ -o $out/lib/$name.so \
+        $(find $objects -name '*.o' -type f) \
+        -lboost_context -lboost_iostreams -lboost_url -larchive -lcrypto -lsodium -lblake3 -lbrotlicommon -lbrotlienc -lbrotlidec -lcpuid -shared
+    '';
+
 /*
   nixSrc = builtins.fetchTree {
     type = "git";
@@ -76,48 +114,19 @@ rec {
 
   source = builtins.elemAt sources 0;
 
-  compileCpp = source: runCommandCC 
-    "${builtins.baseNameOf source.path}.o"
-    {
-      __structuredAttrs = true;
-      includes = source.includes;
-      srcPath = source.path;
-      src = source.src;
-      buildInputs = [ boost nlohmann_json libsodium libarchive brotli libcpuid libblake3 openssl ];
-    }
-    ''
-      for name in "''${!includes[@]}"; do
-        mkdir -p "$(dirname "$name")"
-        ln -s "''${includes[$name]}" "$name"
-      done
-
-      srcDir="$(dirname "$srcPath")"
-      mkdir -p "$srcDir"
-      ln -s "$src" "$srcPath"
-
-      mkdir -p "$out/$srcDir"
-      # FIXME: figure out the -I flags automatically.
-      gcc -std=c++23 -O1 -c "$srcPath" -o "$out/$srcDir/$(basename "$srcPath").o" -I . -I include -I unix/include -I linux/include -I windows/include -I widecharwidth
-    '';
+  depsMap = pkgs // {
+    libcpuid = pkgs.runCommand "libcpuid" { inherit (pkgs) libcpuid; }
+      ''
+        # 12345
+        ln -s $libcpuid $out
+      '';
+  };
 
   all = map compileCpp sources;
 
   compile1 = compileCpp source;
 
   compile_ = map compileCpp (builtins.filter (x: x.path == "unix/processes.cc") sources);
-
-  link = name: objects: runCommandCC
-    name
-    {
-      inherit objects;
-      buildInputs = [ boost libarchive openssl libsodium libblake3 brotli libcpuid ];
-    }
-    ''
-      mkdir -p $out/lib
-      g++ -o $out/lib/$name.so \
-        $(find $objects -name '*.o' -type f) \
-        -lboost_context -lboost_iostreams -lboost_url -larchive -lcrypto -lsodium -lblake3 -lbrotlicommon -lbrotlienc -lbrotlidec -lcpuid -shared
-    '';
 
   libutil = link "libnixutil.so" (map compileCpp sources);
 }

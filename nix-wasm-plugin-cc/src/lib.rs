@@ -61,12 +61,14 @@ pub extern "C" fn cc(args: Value) -> Value {
         }
         //warn!("processing {path}...", path = all_files[cc_file_val].path);
         let mut all_includes: HashMap<String, Value> = HashMap::new();
+        let mut all_deps: HashSet<String> = HashSet::new();
         let mut visited = HashSet::new();
         collect_transitive_includes(
             *cc_file_val,
             &all_files,
             &suffix_map,
             &mut all_includes,
+            &mut all_deps,
             &mut visited,
         );
 
@@ -81,6 +83,15 @@ pub extern "C" fn cc(args: Value) -> Value {
             ("src", *cc_file_val),
             ("path", Value::make_string(&cc_file.path)),
             ("includes", Value::make_attrset(&include_attrs)),
+            (
+                "deps",
+                Value::make_list(
+                    &all_deps
+                        .iter()
+                        .map(|s| Value::make_string(s))
+                        .collect::<Vec<_>>(),
+                ),
+            ),
         ]);
         results.push(entry);
     }
@@ -131,6 +142,7 @@ fn collect_transitive_includes(
     all_files: &HashMap<Value, FileInfo>,
     suffix_map: &HashMap<String, Value>,
     all_includes: &mut HashMap<String, Value>,
+    all_deps: &mut HashSet<String>,
     visited: &mut HashSet<Value>,
 ) {
     if !visited.insert(file) {
@@ -142,12 +154,39 @@ fn collect_transitive_includes(
     for inc in &file.user_includes {
         if let Some(resolved) = suffix_map.get(inc) {
             all_includes.entry(inc.clone()).or_insert(*resolved);
-            collect_transitive_includes(*resolved, all_files, suffix_map, all_includes, visited);
+            collect_transitive_includes(
+                *resolved,
+                all_files,
+                suffix_map,
+                all_includes,
+                all_deps,
+                visited,
+            );
         } else {
             // FIXME: hack
             if !inc.contains("windows") {
                 warn!("{file}: included file not found: {inc}", file = file.path);
             }
+        }
+    }
+
+    for include in &file.sys_includes {
+        if include.starts_with("boost/") {
+            all_deps.insert("boost".to_string());
+        } else if include.starts_with("brotli/") {
+            all_deps.insert("brotli".to_string());
+        } else if include.starts_with("openssl/") {
+            all_deps.insert("openssl".to_string());
+        } else if include == "archive.h" {
+            all_deps.insert("libarchive".to_string());
+        } else if include == "sodium.h" {
+            all_deps.insert("libsodium".to_string());
+        } else if include == "blake3.h" {
+            all_deps.insert("libblake3".to_string());
+        } else if include.starts_with("nlohmann/json") {
+            all_deps.insert("nlohmann_json".to_string());
+        } else if include.starts_with("libcpuid/") {
+            all_deps.insert("libcpuid".to_string());
         }
     }
 }
