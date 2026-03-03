@@ -1,5 +1,5 @@
 use nix_wasm_rust::{Type, Value};
-use yaml_rust2::{yaml, Yaml, YamlEmitter, YamlLoader};
+use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
 fn yaml_to_value(yaml: &Yaml) -> Value {
     match yaml {
@@ -8,23 +8,20 @@ fn yaml_to_value(yaml: &Yaml) -> Value {
         Yaml::String(s) => Value::make_string(s),
         Yaml::Boolean(b) => Value::make_bool(*b),
         Yaml::Array(array) => {
-            let mut res = vec![];
-            for value in array {
-                res.push(yaml_to_value(value));
-            }
-            Value::make_list(&res)
+            Value::make_list(&array.iter().map(yaml_to_value).collect::<Vec<_>>())
         }
-        Yaml::Hash(hash) => {
-            let mut attrset = vec![];
-            for (key, value) in hash {
-                let key: &str = match &key {
-                    Yaml::String(s) => s,
-                    _ => panic!("non-string YAML keys are not supported, in: {:?}", key),
-                };
-                attrset.push((key, yaml_to_value(value)));
-            }
-            Value::make_attrset(&attrset)
-        }
+        Yaml::Hash(hash) => Value::make_attrset(
+            &hash
+                .iter()
+                .map(|(key, value)| {
+                    let key: &str = match &key {
+                        Yaml::String(s) => s,
+                        _ => panic!("non-string YAML keys are not supported, in: {:?}", key),
+                    };
+                    (key, yaml_to_value(value))
+                })
+                .collect::<Vec<_>>(),
+        ),
         Yaml::Null => Value::make_null(),
         _ => panic!("unimplemented YAML value: {:?}", yaml),
     }
@@ -32,17 +29,13 @@ fn yaml_to_value(yaml: &Yaml) -> Value {
 
 #[no_mangle]
 pub extern "C" fn fromYAML(arg: Value) -> Value {
-    let s = arg.get_string();
-
-    let yaml = YamlLoader::load_from_str(&s).unwrap();
-
-    let mut docs = vec![];
-
-    for doc in yaml {
-        docs.push(yaml_to_value(&doc));
-    }
-
-    Value::make_list(&docs)
+    Value::make_list(
+        &YamlLoader::load_from_str(&arg.get_string())
+            .unwrap()
+            .iter()
+            .map(yaml_to_value)
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn to_yaml(v: Value) -> Yaml {
@@ -52,20 +45,13 @@ fn to_yaml(v: Value) -> Yaml {
         Type::Bool => Yaml::Boolean(v.get_bool()),
         Type::String => Yaml::String(v.get_string()),
         Type::Null => Yaml::Null,
-        Type::Attrs => {
-            let mut hash = yaml::Hash::new();
-            for (key, value) in v.get_attrset() {
-                hash.insert(Yaml::String(key), to_yaml(value));
-            }
-            Yaml::Hash(hash)
-        }
-        Type::List => {
-            let mut array = yaml::Array::new();
-            for value in v.get_list() {
-                array.push(to_yaml(value));
-            }
-            Yaml::Array(array)
-        }
+        Type::Attrs => Yaml::Hash(
+            v.get_attrset()
+                .into_iter()
+                .map(|(key, value)| (Yaml::String(key), to_yaml(value)))
+                .collect(),
+        ),
+        Type::List => Yaml::Array(v.get_list().into_iter().map(to_yaml).collect::<Vec<_>>()),
         _ => panic!(
             "Nix type {} cannot be serialized to YAML",
             v.get_type() as u64
