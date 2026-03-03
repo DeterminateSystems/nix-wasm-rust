@@ -1,4 +1,4 @@
-builtins.wasm { path = <plugins/nix_wasm_plugin_quickjs.wasm>; } ''
+builtins.wasm { path = <wasi/nix_wasm_plugin_quickjs.wasm>; } ''
   ({
     num: 1,
     float: 1.5,

@@ -133,16 +133,10 @@
           buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs --exclude nix-wasm-plugin-fib-wasi";
 
           checkPhase = ''
-            mkdir -p plugins
-            cp target/wasm32-unknown-unknown/release/*.wasm plugins/
-            if [[ -n $nix_wasi_plugins ]]; then
-              cp $nix_wasi_plugins/*.wasm plugins/
-            fi
-
             for i in nix-wasm-plugin-*/tests/*.nix; do
               echo "running test $i..."
               base="$(dirname $i)/$(basename $i .nix)"
-              nix eval --store dummy:// --offline --json --show-trace -I plugins=plugins --impure --eval-cores 0 --file "$i" > "$base.out"
+              nix eval --store dummy:// --offline --json --show-trace -I plugins=target/wasm32-unknown-unknown/release -I wasi=$nix_wasi_plugins --impure --eval-cores 0 --file "$i" > "$base.out"
               cmp "$base.exp" "$base.out"
             done
           '';
