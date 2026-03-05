@@ -26,7 +26,38 @@
         );
     in
     {
-      lib = { };
+      lib = {
+        fib = builtins.wasm {
+          path = ./wasm/nix_wasm_plugin_fib.wasm;
+          function = "fib";
+        };
+        fibWasi = builtins.wasm {
+          path = ./wasm/nix_wasm_plugin_fib_wasi.wasm;
+        };
+        grep = builtins.wasm {
+          path = ./wasm/nix_wasm_plugin_grep.wasm;
+          function = "grep";
+        };
+        fromINI = builtins.wasm {
+          path = ./wasm/nix_wasm_plugin_ini.wasm;
+          function = "fromINI";
+        };
+        mandelbrot = builtins.wasm {
+          path = ./wasm/nix_wasm_plugin_mandelbrot.wasm;
+          function = "mandelbrot";
+        };
+        quickJs = builtins.wasm {
+          path = ./wasm/nix_wasm_plugin_quickjs.wasm;
+        };
+        fromYAML = builtins.wasm {
+          path = ./wasm/nix_wasm_plugin_yaml.wasm;
+          function = "fromYAML";
+        };
+        toYAML = builtins.wasm {
+          path = ./wasm/nix_wasm_plugin_yaml.wasm;
+          function = "toYAML";
+        };
+      };
 
       packages = forAllSystems (
         { pkgs, system }:
@@ -206,5 +237,7 @@
           build = self.packages.${system}.default;
         }
       );
+
+      formatter = forAllSystems ({ pkgs, ... }: pkgs.nixfmt-rfc-style);
     };
 }
