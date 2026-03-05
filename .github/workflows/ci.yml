@@ -30,3 +30,10 @@ jobs:
       - name: Build and test
         run: |
           nix flake check --all-systems --eval-cores 0 -L
+
+      - name: Ensure no changes to generated Wasm
+        run: |
+          rm -rf ./wasm
+          nix build
+          cp -r ./result ./wasm
+          git diff --exit-code
