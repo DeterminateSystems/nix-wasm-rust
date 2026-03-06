@@ -8,7 +8,7 @@ struct FileInfo {
 }
 
 #[no_mangle]
-pub extern "C" fn cc(args: Value) -> Value {
+pub extern "C" fn getDeps(args: Value) -> Value {
     let builtins = args
         .get_attr("builtins")
         .expect("missing 'builtins' argument");

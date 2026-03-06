@@ -1,5 +1,5 @@
 [package]
-name = "nix-wasm-plugin-cc"
+name = "nix-wasm-plugin-nix-make"
 version = "0.1.0"
 edition = "2021"
 
