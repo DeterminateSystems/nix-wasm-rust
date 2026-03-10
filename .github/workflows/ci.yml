@@ -33,7 +33,7 @@ jobs:
 
       - name: Ensure no changes to generated Wasm
         run: |
-          rm ./wasm/*.wasm
+          rm -rf ./wasm
           nix build
-          cp -r ./result/*.wasm ./wasm
+          cp -rL --no-preserve=all ./result ./wasm
           git diff --exit-code
