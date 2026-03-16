@@ -10,15 +10,20 @@ To try it out:
 # nix build # to build the Wasm functions
 
 # ls -l ./result/
--r--r--r-- 3 root root  17396 Jan  1  1970 nix_wasm_plugin_fib.wasm
--r--r--r-- 3 root root  64292 Jan  1  1970 nix_wasm_plugin_ini.wasm
--r--r--r-- 3 root root  33277 Jan  1  1970 nix_wasm_plugin_mandelbrot.wasm
--r--r--r-- 3 root root  29635 Jan  1  1970 nix_wasm_plugin_test.wasm
--r--r--r-- 3 root root 205035 Jan  1  1970 nix_wasm_plugin_yaml.wasm
+.r--r--r--@  20k root 31 Dec  1969 nix_wasm_plugin_fib.wasm
+.r--r--r--@  71k root 31 Dec  1969 nix_wasm_plugin_fib_wasi.wasm
+.r--r--r--@  33k root 31 Dec  1969 nix_wasm_plugin_grep.wasm
+.r--r--r--@  60k root 31 Dec  1969 nix_wasm_plugin_ini.wasm
+.r--r--r--@  24k root 31 Dec  1969 nix_wasm_plugin_mandelbrot.wasm
+.r--r--r--@ 586k root 31 Dec  1969 nix_wasm_plugin_quickjs.wasm
+.r--r--r--@  20k root 31 Dec  1969 nix_wasm_plugin_test.wasm
+.r--r--r--@ 185k root 31 Dec  1969 nix_wasm_plugin_yaml.wasm
 
-# nix eval --impure --expr 'builtins.wasm ./result/nix_wasm_plugin_fib.wasm "fib" 40'
+# nix eval --impure --expr \
+  'builtins.wasm { path = ./result/nix_wasm_plugin_fib.wasm; function = "fib"; } 40'
 warning: '/nix/store/1c9yg0mv…-nix-wasm-rust-0.1.0/nix_wasm_plugin_fib.wasm' function 'fib': greetings from Wasm!
 165580141
 
-# nix eval --raw --impure --expr 'builtins.wasm ./result/nix_wasm_plugin_mandelbrot.wasm "mandelbrot" { width = 150; }'
+# nix eval --raw --impure --expr \
+  'builtins.wasm { path = ./result/nix_wasm_plugin_mandelbrot.wasm; function = "mandelbrot"; } { width = 150; }'
 ```
