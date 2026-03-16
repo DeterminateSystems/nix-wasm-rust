@@ -330,6 +330,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix-wasm-plugin-nix-make"
+version = "0.1.0"
+dependencies = [
+ "nix-wasm-rust",
+]
+
+[[package]]
 name = "nix-wasm-plugin-quickjs"
 version = "0.1.0"
 dependencies = [

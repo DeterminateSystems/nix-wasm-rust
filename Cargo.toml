@@ -9,6 +9,7 @@ members = [
     "nix-wasm-plugin-test",
     "nix-wasm-plugin-quickjs",
     "nix-wasm-plugin-grep",
+    "nix-wasm-plugin-nix-make",
 ]
 resolver = "2"
 
