@@ -141,7 +141,7 @@
 
               src = self;
 
-              nix_wasi_plugins = nix-wasi-plugins;
+              nix_wasi_plugins = self.packages.${system}.nix-wasi-plugins;
 
               CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
               buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs --exclude nix-wasm-plugin-fib-wasi";
