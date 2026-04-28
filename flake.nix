@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.follows = "nix/nixpkgs";
-    flake-schemas.url = "https://flakehub.com/f/DeterminateSystems/flake-schemas/=0.3.0";
     nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/3";
   };
 
