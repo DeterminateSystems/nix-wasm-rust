@@ -30,3 +30,11 @@ jobs:
       - name: Build and test
         run: |
           nix flake check --all-systems --eval-cores 0 -L
+
+      - name: Publish to FlakeHub
+        if: matrix.os == 'ubuntu-latest' && github.ref == 'refs/heads/main'
+        uses: DeterminateSystems/flakehub-push@main
+        with:
+          visibility: "public"
+          rolling: true
+          include-output-paths: true
