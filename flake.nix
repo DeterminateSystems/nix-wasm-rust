@@ -110,6 +110,7 @@
                 for i in target/wasm32-wasip1/release/*.wasm; do
                   wasm-opt -O3 --enable-bulk-memory --enable-nontrapping-float-to-int --enable-simd -o "$out/$(basename "$i")" "$i"
                 done
+                nuke-refs $out/*.wasm
               '';
 
               nativeBuildInputs = [
@@ -117,6 +118,7 @@
                 binaryen
                 llvmPackages.clang
                 llvmPackages.libclang
+                nukeReferences
               ];
 
               WASI_SDK = "${wasiSdk}";
@@ -129,6 +131,7 @@
               CARGO_TARGET_WASM32_WASIP1_LINKER = "${wasiSdk}/bin/ld.lld";
               RUSTC_BOOTSTRAP = "1";
               doCheck = false;
+              allowedReferences = [ ];
             };
 
           nix-wasm-plugins =
@@ -174,6 +177,8 @@
               ];
 
               NIX_CONFIG = "extra-experimental-features = wasm-builtin";
+
+              allowedReferences = [ ];
             };
 
           nix = inputs.nix.packages.${system}.nix-cli;
