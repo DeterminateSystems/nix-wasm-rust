@@ -33,7 +33,7 @@
           nix-wasi-plugins =
             with pkgs;
             let
-              rustPackages = pkgs.rustPackages_1_89;
+              rustPackages = pkgs.rustPackages;
               rustPlatform = rustPackages.rustPlatform;
               rustSysroot = runCommand "rust-sysroot" { } ''
                 mkdir -p $out/lib/rustlib
@@ -53,10 +53,9 @@
               wasiLibc = pkgs.pkgsCross.wasi32.wasilibc;
               wasiLibcDev = wasiLibc.dev;
               wasiSysroot = runCommand "wasi-sysroot" { } ''
-                mkdir -p $out/include $out/lib/wasm32-wasip1
+                mkdir -p $out/include $out/lib
                 cp -R ${wasiLibcDev}/include/* $out/include/
-                cp -R ${wasiLibc}/lib/* $out/lib/
-                cp -R ${wasiLibc}/lib/* $out/lib/wasm32-wasip1/
+                cp -R ${wasiLibc}/lib/. $out/lib/
               '';
               wasiSdk = runCommand "wasi-sdk-compat" { } ''
                 mkdir -p $out/bin $out/lib/clang/19 $out/share
@@ -76,7 +75,7 @@
               stdlibVendor = rustPlatform.fetchCargoVendor {
                 src = rustPlatform.rustcSrc;
                 cargoRoot = "library";
-                hash = "sha256-XD+1wJ7GfnJG4qyulIdZum7VV4rtIoQRM+L0xXUHjXA=";
+                hash = "sha256-5oJ/mtsJW0R3F7jgxafP23+WMLkyMKu10De5WIzb7Ro=";
               };
               cargoVendor = runCommand "cargo-vendor-merged" { } ''
                 mkdir -p $out
@@ -161,7 +160,7 @@
               installPhase = ''
                 mkdir -p $out
                 for i in target/wasm32-unknown-unknown/release/*.wasm; do
-                  wasm-opt -O3 -o "$out/$(basename "$i")" "$i"
+                  wasm-opt -O3 --enable-bulk-memory --enable-nontrapping-float-to-int -o "$out/$(basename "$i")" "$i"
                 done
                 if [[ -n $nix_wasi_plugins ]]; then
                   cp $nix_wasi_plugins/*.wasm $out/
