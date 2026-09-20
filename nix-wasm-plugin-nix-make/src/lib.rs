@@ -101,6 +101,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         .filter(|path| !is_excluded(path))
         .collect();
 
+    let mut warned: HashSet<(String, String)> = HashSet::new();
     let mut results = vec![];
     for source in &sources {
         let Some(file) = index.get(source) else {
@@ -117,6 +118,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             &mut includes,
             &mut external,
             &mut visited,
+            &mut warned,
         );
 
         let include_attrs: Vec<(&str, Value)> = includes
@@ -170,6 +172,7 @@ fn collect_transitive_includes(
     includes: &mut BTreeMap<String, Value>,
     external: &mut BTreeSet<String>,
     visited: &mut HashSet<String>,
+    warned: &mut HashSet<(String, String)>,
 ) {
     if !visited.insert(path.to_string()) {
         return;
@@ -188,13 +191,17 @@ fn collect_transitive_includes(
                     includes,
                     external,
                     visited,
+                    warned,
                 );
             }
             None if inc.angle => {
                 external.insert(inc.path.clone());
             }
             None => {
-                warn!("{path}: included file not found: {inc}", inc = inc.path);
+                // Warn once per (file, include), not once per unit reaching it.
+                if warned.insert((path.to_string(), inc.path.clone())) {
+                    warn!("{path}: included file not found: {inc}", inc = inc.path);
+                }
             }
         }
     }
