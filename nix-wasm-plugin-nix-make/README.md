@@ -15,9 +15,7 @@ getDeps {
   # known by `prefix/<relative path>`. Symlinks are ignored.
   roots = [ { root = ./src/libutil; prefix = ""; } ];
 
-  # Suffixes identifying compilation units. Files with these suffixes,
-  # plus headers (`.hh`, `.hpp`, `.h`) and files included as string
-  # literals (`.sb`, `.md`), are added to the index.
+  # Suffixes identifying compilation units among the indexed files.
   sourceExtensions = [ ".cc" ];
 
   # Include search path (relative to the prefix namespace), in order.
@@ -47,6 +45,8 @@ The result is a list, sorted by `path`, of attribute sets:
   externalIncludes = [ "openssl/sha.h" "sodium.h" ... ];
 }
 ```
+
+Every regular file under the roots is indexed, but a file is only read and parsed for `#include`s once it is reached from a compilation unit, so files that no unit needs (e.g. headers for other platforms) are never read.
 
 Includes are resolved like a compiler does: `#include "x"` is first looked up relative to the including file's directory, then in each of `includeDirs`; `#include <x>` only in `includeDirs`. Angle-bracket includes that are not found in the index are reported in `externalIncludes` so the caller can map them to external dependencies. Quoted includes that cannot be resolved produce a warning.
 

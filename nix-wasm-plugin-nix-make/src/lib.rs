@@ -3,6 +3,7 @@
 //! See README.md for the argument and result schema of `getDeps`.
 
 use nix_wasm_rust::{warn, Value};
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// An `#include` directive: the included path and whether it used angle brackets.
@@ -14,7 +15,24 @@ struct Include {
 struct FileInfo {
     /// The Nix value (path or string) denoting this file.
     value: Value,
-    includes: Vec<Include>,
+    /// The `#include` directives of this file, parsed lazily the first
+    /// time the file is reached from a compilation unit, so that only
+    /// files that are actually needed are read.
+    includes: OnceCell<Vec<Include>>,
+}
+
+impl FileInfo {
+    fn new(value: Value) -> Self {
+        FileInfo {
+            value,
+            includes: OnceCell::new(),
+        }
+    }
+
+    fn includes(&self) -> &[Include] {
+        self.includes
+            .get_or_init(|| extract_includes(&self.value.read_file()))
+    }
 }
 
 /// Index of all known files, keyed by their path relative to the root namespace.
@@ -42,13 +60,12 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             .get_attr("prefix")
             .expect("missing 'prefix' attribute")
             .get_string();
-        scan_files(&read_dir, &root, &prefix, &source_extensions, &mut index);
+        scan_files(&read_dir, &root, &prefix, &mut index);
     }
 
     if let Some(files) = args.get_attr("files") {
         for (name, value) in files.get_attrset() {
-            let includes = extract_includes(&value.read_file());
-            index.insert(normalize(&name), FileInfo { value, includes });
+            index.insert(normalize(&name), FileInfo::new(value));
         }
     }
 
@@ -129,35 +146,17 @@ fn has_extension(name: &str, extensions: &[String]) -> bool {
     extensions.iter().any(|ext| name.ends_with(ext.as_str()))
 }
 
-/// Files that can be `#include`d: headers and files included as string literals.
-const HEADER_EXTENSIONS: &[&str] = &[".hh", ".hpp", ".h", ".sb", ".md"];
-
-fn scan_files(
-    read_dir: &Value,
-    dir: &Value,
-    prefix: &str,
-    source_extensions: &[String],
-    index: &mut Index,
-) {
+/// Add every regular file under `dir` to the index. Files are not read here;
+/// see `FileInfo::includes`.
+fn scan_files(read_dir: &Value, dir: &Value, prefix: &str, index: &mut Index) {
     for (name, file_type) in read_dir.call(&[*dir]).get_attrset() {
         let child = dir.make_path(&name);
         let path = join(prefix, &name);
         match file_type.get_string().as_str() {
             "regular" => {
-                if has_extension(&name, source_extensions)
-                    || HEADER_EXTENSIONS.iter().any(|ext| name.ends_with(ext))
-                {
-                    let includes = extract_includes(&child.read_file());
-                    index.insert(
-                        path,
-                        FileInfo {
-                            value: child,
-                            includes,
-                        },
-                    );
-                }
+                index.insert(path, FileInfo::new(child));
             }
-            "directory" => scan_files(read_dir, &child, &path, source_extensions, index),
+            "directory" => scan_files(read_dir, &child, &path, index),
             // Symlinks are ignored (e.g. `nix-meson-build-support` -> `../../nix-meson-build-support`).
             _ => {}
         }
@@ -178,7 +177,7 @@ fn collect_transitive_includes(
 
     let file = &index[path];
 
-    for inc in &file.includes {
+    for inc in file.includes() {
         match resolve(index, include_dirs, path, inc) {
             Some(resolved) => {
                 includes.insert(resolved.clone(), index[&resolved].value);
