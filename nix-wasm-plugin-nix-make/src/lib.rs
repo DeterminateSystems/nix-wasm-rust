@@ -23,6 +23,14 @@ enum Source {
     Generated { from: String },
 }
 
+/// Where an `#include` directive points to.
+enum Resolution {
+    /// A file in the index.
+    File(String),
+    /// An angle-bracket include not found in the index.
+    External(String),
+}
+
 struct FileInfo {
     source: Source,
     /// The `#include` directives of this file, parsed lazily the first
@@ -30,6 +38,9 @@ struct FileInfo {
     /// files that are actually needed are read. Unused for generated
     /// files, which delegate to their source.
     includes: OnceCell<Vec<Include>>,
+    /// The resolved `#include`s, computed once per file rather than once
+    /// per unit reaching it.
+    resolved: OnceCell<Vec<Resolution>>,
 }
 
 impl FileInfo {
@@ -37,6 +48,7 @@ impl FileInfo {
         FileInfo {
             source: Source::Real(value),
             includes: OnceCell::new(),
+            resolved: OnceCell::new(),
         }
     }
 
@@ -44,6 +56,7 @@ impl FileInfo {
         FileInfo {
             source: Source::Generated { from },
             includes: OnceCell::new(),
+            resolved: OnceCell::new(),
         }
     }
 }
@@ -159,17 +172,17 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         .filter(|path| !is_excluded(path))
         .collect();
 
-    let mut warned: HashSet<(String, String)> = HashSet::new();
     let mut results = vec![];
     for source in &sources {
         let Some(file) = index.get(source) else {
             panic!("source file '{source}' not found in the scanned roots or explicit files");
         };
 
-        let mut includes: BTreeMap<String, Value> = BTreeMap::new();
-        let mut generated: BTreeSet<String> = BTreeSet::new();
-        let mut external: BTreeSet<String> = BTreeSet::new();
-        let mut visited: HashSet<String> = HashSet::new();
+        let mut includes: BTreeMap<&str, Value> = BTreeMap::new();
+        let mut generated: BTreeSet<&str> = BTreeSet::new();
+        let mut external: BTreeSet<&str> = BTreeSet::new();
+        let mut visited: HashSet<&str> = HashSet::new();
+        visited.insert(source);
         collect_transitive_includes(
             source,
             &index,
@@ -179,12 +192,11 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             &mut generated,
             &mut external,
             &mut visited,
-            &mut warned,
         );
 
         let include_attrs: Vec<(&str, Value)> = includes
             .iter()
-            .map(|(path, value)| (path.as_str(), *value))
+            .map(|(path, value)| (*path, *value))
             .collect();
         let generated_values: Vec<Value> =
             generated.iter().map(|s| Value::make_string(s)).collect();
@@ -233,34 +245,61 @@ fn scan_files(read_dir: &Value, dir: &Value, prefix: &str, index: &mut Index) {
     }
 }
 
-fn collect_transitive_includes(
+/// The resolved `#include`s of an indexed file, memoized per file.
+fn resolved_includes_of<'a>(
+    index: &'a Index,
     path: &str,
-    index: &Index,
     include_dirs: &[String],
     defines: &Defines,
-    includes: &mut BTreeMap<String, Value>,
-    generated: &mut BTreeSet<String>,
-    external: &mut BTreeSet<String>,
-    visited: &mut HashSet<String>,
-    warned: &mut HashSet<(String, String)>,
-) {
-    if !visited.insert(path.to_string()) {
-        return;
+) -> &'a [Resolution] {
+    let file = &index[path];
+    if let Source::Generated { from } = &file.source {
+        // Generated files live next to their source, so resolve as it.
+        return resolved_includes_of(index, from, include_dirs, defines);
     }
+    file.resolved.get_or_init(|| {
+        includes_of(index, path, defines)
+            .iter()
+            .filter_map(|inc| match resolve(index, include_dirs, path, inc) {
+                Some(resolved) => Some(Resolution::File(resolved)),
+                None if inc.angle => Some(Resolution::External(inc.path.clone())),
+                None => {
+                    warn!("{path}: included file not found: {inc}", inc = inc.path);
+                    None
+                }
+            })
+            .collect()
+    })
+}
 
-    for inc in includes_of(index, path, defines) {
-        match resolve(index, include_dirs, path, inc) {
-            Some(resolved) => {
-                match &index[&resolved].source {
+/// Walk the include graph from `path`, collecting every file reached.
+fn collect_transitive_includes<'a>(
+    path: &str,
+    index: &'a Index,
+    include_dirs: &[String],
+    defines: &Defines,
+    includes: &mut BTreeMap<&'a str, Value>,
+    generated: &mut BTreeSet<&'a str>,
+    external: &mut BTreeSet<&'a str>,
+    visited: &mut HashSet<&'a str>,
+) {
+    for resolution in resolved_includes_of(index, path, include_dirs, defines) {
+        match resolution {
+            Resolution::File(resolved) => {
+                let (resolved, file) = index.get_key_value(resolved.as_str()).unwrap();
+                if !visited.insert(resolved) {
+                    continue;
+                }
+                match &file.source {
                     Source::Real(value) => {
-                        includes.insert(resolved.clone(), *value);
+                        includes.insert(resolved, *value);
                     }
                     Source::Generated { .. } => {
-                        generated.insert(resolved.clone());
+                        generated.insert(resolved);
                     }
                 }
                 collect_transitive_includes(
-                    &resolved,
+                    resolved,
                     index,
                     include_dirs,
                     defines,
@@ -268,17 +307,10 @@ fn collect_transitive_includes(
                     generated,
                     external,
                     visited,
-                    warned,
                 );
             }
-            None if inc.angle => {
-                external.insert(inc.path.clone());
-            }
-            None => {
-                // Warn once per (file, include), not once per unit reaching it.
-                if warned.insert((path.to_string(), inc.path.clone())) {
-                    warn!("{path}: included file not found: {inc}", inc = inc.path);
-                }
+            Resolution::External(inc) => {
+                external.insert(inc);
             }
         }
     }
