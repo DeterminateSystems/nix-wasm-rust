@@ -27,6 +27,9 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         .expect("missing 'builtins' argument");
     let read_dir = builtins.get_attr("readDir").unwrap();
 
+    let source_extensions =
+        get_string_list(&args, "sourceExtensions").expect("missing 'sourceExtensions' argument");
+
     // Build the file index by scanning the roots and adding explicit files.
     let mut index = Index::new();
     for entry in args
@@ -39,7 +42,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             .get_attr("prefix")
             .expect("missing 'prefix' attribute")
             .get_string();
-        scan_files(&read_dir, &root, &prefix, &mut index);
+        scan_files(&read_dir, &root, &prefix, &source_extensions, &mut index);
     }
 
     if let Some(files) = args.get_attr("files") {
@@ -49,22 +52,36 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         }
     }
 
-    let include_dirs: Vec<String> = args
-        .get_attr("includeDirs")
-        .map(|v| {
-            v.get_list()
-                .iter()
-                .map(|d| normalize(&d.get_string()))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let sources: BTreeSet<String> = args
-        .get_attr("sources")
-        .expect("missing 'sources' argument")
-        .get_list()
+    let include_dirs: Vec<String> = get_string_list(&args, "includeDirs")
+        .unwrap_or_default()
         .iter()
-        .map(|s| normalize(&s.get_string()))
+        .map(|d| normalize(d))
+        .collect();
+
+    // The compilation units: either given explicitly, or every indexed
+    // file with a source extension. In both cases minus `excludeSources`.
+    let exclude_sources: Vec<String> = get_string_list(&args, "excludeSources")
+        .unwrap_or_default()
+        .iter()
+        .map(|d| normalize(d))
+        .collect();
+    let is_excluded = |path: &str| {
+        exclude_sources
+            .iter()
+            .any(|e| path == e || path.starts_with(&format!("{e}/")))
+    };
+
+    let candidates: Vec<String> = match get_string_list(&args, "sources") {
+        Some(sources) => sources.iter().map(|s| normalize(s)).collect(),
+        None => index
+            .keys()
+            .filter(|path| has_extension(path, &source_extensions))
+            .cloned()
+            .collect(),
+    };
+    let sources: BTreeSet<String> = candidates
+        .into_iter()
+        .filter(|path| !is_excluded(path))
         .collect();
 
     let mut results = vec![];
@@ -102,19 +119,34 @@ pub extern "C" fn getDeps(args: Value) -> Value {
     Value::make_list(&results)
 }
 
-fn is_source_file(name: &str) -> bool {
-    [".cc", ".hh", ".h", ".sb", ".md"]
-        .iter()
-        .any(|ext| name.ends_with(ext))
+/// Get an optional list-of-strings attribute.
+fn get_string_list(args: &Value, name: &str) -> Option<Vec<String>> {
+    args.get_attr(name)
+        .map(|v| v.get_list().iter().map(|s| s.get_string()).collect())
 }
 
-fn scan_files(read_dir: &Value, dir: &Value, prefix: &str, index: &mut Index) {
+fn has_extension(name: &str, extensions: &[String]) -> bool {
+    extensions.iter().any(|ext| name.ends_with(ext.as_str()))
+}
+
+/// Files that can be `#include`d: headers and files included as string literals.
+const HEADER_EXTENSIONS: &[&str] = &[".hh", ".hpp", ".h", ".sb", ".md"];
+
+fn scan_files(
+    read_dir: &Value,
+    dir: &Value,
+    prefix: &str,
+    source_extensions: &[String],
+    index: &mut Index,
+) {
     for (name, file_type) in read_dir.call(&[*dir]).get_attrset() {
         let child = dir.make_path(&name);
         let path = join(prefix, &name);
         match file_type.get_string().as_str() {
             "regular" => {
-                if is_source_file(&name) {
+                if has_extension(&name, source_extensions)
+                    || HEADER_EXTENSIONS.iter().any(|ext| name.ends_with(ext))
+                {
                     let includes = extract_includes(&child.read_file());
                     index.insert(
                         path,
@@ -125,7 +157,7 @@ fn scan_files(read_dir: &Value, dir: &Value, prefix: &str, index: &mut Index) {
                     );
                 }
             }
-            "directory" => scan_files(read_dir, &child, &path, index),
+            "directory" => scan_files(read_dir, &child, &path, source_extensions, index),
             // Symlinks are ignored (e.g. `nix-meson-build-support` -> `../../nix-meson-build-support`).
             _ => {}
         }

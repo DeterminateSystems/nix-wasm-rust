@@ -15,14 +15,25 @@ getDeps {
   # known by `prefix/<relative path>`. Symlinks are ignored.
   roots = [ { root = ./src/libutil; prefix = ""; } ];
 
+  # Suffixes identifying compilation units. Files with these suffixes,
+  # plus headers (`.hh`, `.hpp`, `.h`) and files included as string
+  # literals (`.sb`, `.md`), are added to the index.
+  sourceExtensions = [ ".cc" ];
+
   # Include search path (relative to the prefix namespace), in order.
   includeDirs = [ "" "include" "unix" "unix/include" ];
 
   # Extra index entries, e.g. generated headers or out-of-tree sources.
   files = { "include/nix/util/config.hh" = builtins.toFile "config.hh" "..."; };
 
-  # The compilation units to compute closures for (keys into the index).
+  # Optional: the compilation units to compute closures for (keys into the
+  # index). By default, every indexed file with a source extension is a
+  # compilation unit, so adding a source file needs no build system change.
   sources = [ "hash.cc" "unix/file-descriptor.cc" ];
+
+  # Optional: paths (files, or directories with everything below them) to
+  # leave out of the compilation units, e.g. sources for other platforms.
+  excludeSources = [ "windows" "freebsd" ];
 }
 ```
 
