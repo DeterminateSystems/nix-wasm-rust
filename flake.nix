@@ -150,6 +150,8 @@
               buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs --exclude nix-wasm-plugin-fib-wasi";
 
               checkPhase = ''
+                cargo test -p nix-wasm-plugin-nix-make --target ${stdenv.hostPlatform.rust.rustcTarget}
+
                 for i in nix-wasm-plugin-*/tests/*.nix; do
                   echo "running test $i..."
                   base="$(dirname $i)/$(basename $i .nix)"

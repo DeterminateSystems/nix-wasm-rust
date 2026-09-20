@@ -2,9 +2,12 @@
 //!
 //! See README.md for the argument and result schema of `getDeps`.
 
+mod preprocessor;
+
 use nix_wasm_rust::{warn, Value};
+use preprocessor::{eval_condition, ConditionalStack, Defines};
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// An `#include` directive: the included path and whether it used angle brackets.
 struct Include {
@@ -29,9 +32,9 @@ impl FileInfo {
         }
     }
 
-    fn includes(&self) -> &[Include] {
+    fn includes(&self, defines: &Defines) -> &[Include] {
         self.includes
-            .get_or_init(|| extract_includes(&self.value.read_file()))
+            .get_or_init(|| extract_includes(&self.value.read_file(), defines))
     }
 }
 
@@ -47,6 +50,23 @@ pub extern "C" fn getDeps(args: Value) -> Value {
 
     let source_extensions =
         get_string_list(&args, "sourceExtensions").expect("missing 'sourceExtensions' argument");
+
+    // Macros known to be defined or undefined, for evaluating conditionals.
+    let defines = Defines {
+        defined: args
+            .get_attr("defines")
+            .map(|v| {
+                v.get_attrset()
+                    .into_iter()
+                    .map(|(k, v)| (k, v.get_string()))
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default(),
+        undefined: get_string_list(&args, "undefines")
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
+    };
 
     // Build the file index by scanning the roots and adding explicit files.
     let mut index = Index::new();
@@ -115,6 +135,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             source,
             &index,
             &include_dirs,
+            &defines,
             &mut includes,
             &mut external,
             &mut visited,
@@ -169,6 +190,7 @@ fn collect_transitive_includes(
     path: &str,
     index: &Index,
     include_dirs: &[String],
+    defines: &Defines,
     includes: &mut BTreeMap<String, Value>,
     external: &mut BTreeSet<String>,
     visited: &mut HashSet<String>,
@@ -180,7 +202,7 @@ fn collect_transitive_includes(
 
     let file = &index[path];
 
-    for inc in file.includes() {
+    for inc in file.includes(defines) {
         match resolve(index, include_dirs, path, inc) {
             Some(resolved) => {
                 includes.insert(resolved.clone(), index[&resolved].value);
@@ -188,6 +210,7 @@ fn collect_transitive_includes(
                     &resolved,
                     index,
                     include_dirs,
+                    defines,
                     includes,
                     external,
                     visited,
@@ -261,32 +284,221 @@ fn normalize(path: &str) -> String {
     parts.join("/")
 }
 
-fn extract_includes(contents: &[u8]) -> Vec<Include> {
+fn extract_includes(contents: &[u8], defines: &Defines) -> Vec<Include> {
     let mut includes = vec![];
     let Ok(text) = std::str::from_utf8(contents) else {
         return includes;
     };
-    // FIXME: process #ifdefs so we can skip #includes that don't apply.
-    for line in text.lines() {
-        let Some(rest) = line.trim().strip_prefix('#') else {
+
+    let mut conditionals = ConditionalStack::new();
+
+    for line in logical_lines(text) {
+        let Some(directive) = line.trim().strip_prefix('#') else {
             continue;
         };
-        let Some(rest) = rest.trim_start().strip_prefix("include") else {
-            continue;
+        let directive = strip_comments(directive);
+        let directive = directive.trim();
+        let (name, rest) = match directive.find(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+            Some(pos) => (&directive[..pos], directive[pos..].trim()),
+            None => (directive, ""),
         };
-        let rest = rest.trim_start();
-        let (close, angle) = match rest.chars().next() {
-            Some('"') => ('"', false),
-            Some('<') => ('>', true),
-            _ => continue,
-        };
-        let rest = &rest[1..];
-        if let Some(end) = rest.find(close) {
-            includes.push(Include {
-                path: rest[..end].to_string(),
-                angle,
-            });
+
+        match name {
+            "if" => conditionals.push(eval_condition(rest, defines)),
+            "ifdef" => conditionals.push(eval_condition(&format!("defined({rest})"), defines)),
+            "ifndef" => conditionals.push(eval_condition(&format!("!defined({rest})"), defines)),
+            "elif" => conditionals.elif(eval_condition(rest, defines)),
+            "elifdef" => conditionals.elif(eval_condition(&format!("defined({rest})"), defines)),
+            "elifndef" => conditionals.elif(eval_condition(&format!("!defined({rest})"), defines)),
+            "else" => conditionals.else_(),
+            "endif" => conditionals.pop(),
+            "include" if conditionals.active() => {
+                let (close, angle) = match rest.chars().next() {
+                    Some('"') => ('"', false),
+                    Some('<') => ('>', true),
+                    _ => continue,
+                };
+                if let Some(end) = rest[1..].find(close) {
+                    includes.push(Include {
+                        path: rest[1..1 + end].to_string(),
+                        angle,
+                    });
+                }
+            }
+            _ => {}
         }
     }
     includes
+}
+
+/// Split into lines, joining lines that end with a backslash.
+fn logical_lines(text: &str) -> Vec<String> {
+    let mut lines = vec![];
+    let mut current = String::new();
+    for line in text.lines() {
+        if let Some(prefix) = line.strip_suffix('\\') {
+            current.push_str(prefix);
+            current.push(' ');
+        } else {
+            current.push_str(line);
+            lines.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+/// Remove `// ...` and `/* ... */` comments from a directive line.
+fn strip_comments(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    loop {
+        let line_comment = rest.find("//");
+        let block_comment = rest.find("/*");
+        match (line_comment, block_comment) {
+            (Some(l), Some(b)) if l < b => {
+                out.push_str(&rest[..l]);
+                break;
+            }
+            (Some(l), None) => {
+                out.push_str(&rest[..l]);
+                break;
+            }
+            (_, Some(b)) => {
+                out.push_str(&rest[..b]);
+                out.push(' ');
+                match rest[b + 2..].find("*/") {
+                    Some(e) => rest = &rest[b + 2 + e + 2..],
+                    None => break,
+                }
+            }
+            (None, None) => {
+                out.push_str(rest);
+                break;
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn defines() -> Defines {
+        Defines {
+            defined: [("__linux__", "1"), ("HAVE_FOO", "0")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            undefined: ["_WIN32"].into_iter().map(str::to_string).collect(),
+        }
+    }
+
+    fn includes(source: &str) -> Vec<String> {
+        extract_includes(source.as_bytes(), &defines())
+            .into_iter()
+            .map(|inc| {
+                if inc.angle {
+                    format!("<{}>", inc.path)
+                } else {
+                    format!("\"{}\"", inc.path)
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn plain_includes() {
+        assert_eq!(
+            includes("#include \"a.hh\"\n  #  include <b.h> // comment\n#include \"c.hh\" /* x */\nint x;\n"),
+            ["\"a.hh\"", "<b.h>", "\"c.hh\""]
+        );
+    }
+
+    #[test]
+    fn conditionals() {
+        let source = "\
+#ifdef _WIN32
+#  include \"win.hh\"
+#elif defined(__linux__)
+#  include \"linux.hh\"
+#else
+#  include \"other.hh\"
+#endif
+#if HAVE_FOO
+#  include \"foo.hh\"
+#endif
+#if 0
+#  include \"dead.hh\"
+#endif
+#ifndef UNKNOWN
+#  include \"maybe1.hh\"
+#else
+#  include \"maybe2.hh\"
+#endif
+#if defined(__linux__) && UNKNOWN_VERSION >= 3
+#  include \"maybe3.hh\"
+#endif
+#include \"always.hh\"
+";
+        assert_eq!(
+            includes(source),
+            [
+                "\"linux.hh\"",
+                "\"maybe1.hh\"",
+                "\"maybe2.hh\"",
+                "\"maybe3.hh\"",
+                "\"always.hh\""
+            ]
+        );
+    }
+
+    #[test]
+    fn nested_conditionals() {
+        let source = "\
+#ifndef _WIN32
+#  ifdef __linux__
+#    include \"linux.hh\"
+#  else
+#    include \"unix.hh\"
+#  endif
+#else
+#  ifdef __linux__
+#    include \"impossible.hh\"
+#  endif
+#endif
+";
+        assert_eq!(includes(source), ["\"linux.hh\""]);
+    }
+
+    #[test]
+    fn line_continuations_and_comments() {
+        let source = "\
+#if defined(_WIN32) || \\
+    defined(__APPLE__)
+#  include \"not-linux.hh\"
+#endif /* end */
+#if /* inline */ defined(__linux__) // trailing
+#  include \"linux.hh\"
+#endif
+";
+        // `__APPLE__` is unknown here, so the first block is kept.
+        assert_eq!(includes(source), ["\"not-linux.hh\"", "\"linux.hh\""]);
+    }
+
+    #[test]
+    fn non_utf8_has_no_includes() {
+        assert!(extract_includes(&[0xff, 0xfe, b'#'], &defines()).is_empty());
+    }
+
+    #[test]
+    fn normalize_paths() {
+        assert_eq!(normalize("a/b/../c/./d.hh"), "a/c/d.hh");
+        assert_eq!(normalize("../x.hh"), "x.hh");
+        assert_eq!(normalize("unix/"), "unix");
+        assert_eq!(normalize(""), "");
+    }
 }

@@ -32,6 +32,11 @@ getDeps {
   # Optional: paths (files, or directories with everything below them) to
   # leave out of the compilation units, e.g. sources for other platforms.
   excludeSources = [ "windows" "freebsd" ];
+
+  # Optional: macros known to be defined (with their value) or undefined,
+  # used to evaluate preprocessor conditionals around #includes.
+  defines = { __linux__ = "1"; HAVE_SECCOMP = "1"; };
+  undefines = [ "_WIN32" "__APPLE__" ];
 }
 ```
 
@@ -50,4 +55,4 @@ Every regular file under the roots is indexed, but a file is only read and parse
 
 Includes are resolved like a compiler does: `#include "x"` is first looked up relative to the including file's directory, then in each of `includeDirs`; `#include <x>` only in `includeDirs`. Angle-bracket includes that are not found in the index are reported in `externalIncludes` so the caller can map them to external dependencies. Quoted includes that cannot be resolved produce a warning.
 
-Limitations: preprocessor conditionals are ignored, so the closure may over-approximate (e.g. includes guarded by `#ifdef _WIN32` are still included).
+Preprocessor conditionals (`#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`) are evaluated against the macros in `defines` (an attribute set of macro names to values) and `undefines` (a list of macro names known to be undefined). A condition that cannot be decided from these keeps both branches, so the result is always an over-approximation of what the compiler will include. For example, with `undefines = [ "_WIN32" ]`, an include guarded by `#ifdef _WIN32` is skipped, while one guarded by `#if __GNUC__ >= 12` is kept unless `__GNUC__` is given.
