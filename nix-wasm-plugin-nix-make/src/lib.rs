@@ -15,31 +15,52 @@ struct Include {
     angle: bool,
 }
 
+enum Source {
+    /// A real file, denoted by a Nix path or string value.
+    Real(Value),
+    /// A file generated at build time (e.g. by bison) from the real file
+    /// `from`, whose `#include`s it is assumed to inherit.
+    Generated { from: String },
+}
+
 struct FileInfo {
-    /// The Nix value (path or string) denoting this file.
-    value: Value,
+    source: Source,
     /// The `#include` directives of this file, parsed lazily the first
     /// time the file is reached from a compilation unit, so that only
-    /// files that are actually needed are read.
+    /// files that are actually needed are read. Unused for generated
+    /// files, which delegate to their source.
     includes: OnceCell<Vec<Include>>,
 }
 
 impl FileInfo {
     fn new(value: Value) -> Self {
         FileInfo {
-            value,
+            source: Source::Real(value),
             includes: OnceCell::new(),
         }
     }
 
-    fn includes(&self, defines: &Defines) -> &[Include] {
-        self.includes
-            .get_or_init(|| extract_includes(&self.value.read_file(), defines))
+    fn generated(from: String) -> Self {
+        FileInfo {
+            source: Source::Generated { from },
+            includes: OnceCell::new(),
+        }
     }
 }
 
 /// Index of all known files, keyed by their path relative to the root namespace.
 type Index = BTreeMap<String, FileInfo>;
+
+/// The `#include`s of an indexed file.
+fn includes_of<'a>(index: &'a Index, path: &str, defines: &Defines) -> &'a [Include] {
+    let file = &index[path];
+    match &file.source {
+        Source::Real(value) => file
+            .includes
+            .get_or_init(|| extract_includes(&value.read_file(), defines)),
+        Source::Generated { from } => includes_of(index, from, defines),
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn getDeps(args: Value) -> Value {
@@ -89,6 +110,23 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         }
     }
 
+    // Files generated at build time, which inherit the includes of their source.
+    if let Some(generated) = args.get_attr("generated") {
+        for (name, from) in generated.get_attrset() {
+            let from = normalize(&from.get_string());
+            if !matches!(
+                index.get(&from),
+                Some(FileInfo {
+                    source: Source::Real(_),
+                    ..
+                })
+            ) {
+                panic!("source '{from}' of generated file '{name}' is not a known file");
+            }
+            index.insert(normalize(&name), FileInfo::generated(from));
+        }
+    }
+
     let include_dirs: Vec<String> = get_string_list(&args, "includeDirs")
         .unwrap_or_default()
         .iter()
@@ -129,6 +167,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         };
 
         let mut includes: BTreeMap<String, Value> = BTreeMap::new();
+        let mut generated: BTreeSet<String> = BTreeSet::new();
         let mut external: BTreeSet<String> = BTreeSet::new();
         let mut visited: HashSet<String> = HashSet::new();
         collect_transitive_includes(
@@ -137,6 +176,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             &include_dirs,
             &defines,
             &mut includes,
+            &mut generated,
             &mut external,
             &mut visited,
             &mut warned,
@@ -146,12 +186,19 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             .iter()
             .map(|(path, value)| (path.as_str(), *value))
             .collect();
+        let generated_values: Vec<Value> =
+            generated.iter().map(|s| Value::make_string(s)).collect();
         let external_values: Vec<Value> = external.iter().map(|s| Value::make_string(s)).collect();
+        let src = match &file.source {
+            Source::Real(value) => *value,
+            Source::Generated { .. } => Value::make_null(),
+        };
 
         results.push(Value::make_attrset(&[
             ("path", Value::make_string(source)),
-            ("src", file.value),
+            ("src", src),
             ("includes", Value::make_attrset(&include_attrs)),
+            ("generatedIncludes", Value::make_list(&generated_values)),
             ("externalIncludes", Value::make_list(&external_values)),
         ]));
     }
@@ -192,6 +239,7 @@ fn collect_transitive_includes(
     include_dirs: &[String],
     defines: &Defines,
     includes: &mut BTreeMap<String, Value>,
+    generated: &mut BTreeSet<String>,
     external: &mut BTreeSet<String>,
     visited: &mut HashSet<String>,
     warned: &mut HashSet<(String, String)>,
@@ -200,18 +248,24 @@ fn collect_transitive_includes(
         return;
     }
 
-    let file = &index[path];
-
-    for inc in file.includes(defines) {
+    for inc in includes_of(index, path, defines) {
         match resolve(index, include_dirs, path, inc) {
             Some(resolved) => {
-                includes.insert(resolved.clone(), index[&resolved].value);
+                match &index[&resolved].source {
+                    Source::Real(value) => {
+                        includes.insert(resolved.clone(), *value);
+                    }
+                    Source::Generated { .. } => {
+                        generated.insert(resolved.clone());
+                    }
+                }
                 collect_transitive_includes(
                     &resolved,
                     index,
                     include_dirs,
                     defines,
                     includes,
+                    generated,
                     external,
                     visited,
                     warned,

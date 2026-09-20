@@ -37,6 +37,11 @@ getDeps {
   # used to evaluate preprocessor conditionals around #includes.
   defines = { __linux__ = "1"; HAVE_SECCOMP = "1"; };
   undefines = [ "_WIN32" "__APPLE__" ];
+
+  # Optional: files generated at build time (e.g. by bison), mapped to the
+  # real file whose #includes they are assumed to inherit. They are not
+  # read; the build has to provide them.
+  generated = { "parser-tab.hh" = "parser.y"; "parser-tab.cc" = "parser.y"; };
 }
 ```
 
@@ -45,8 +50,9 @@ The result is a list, sorted by `path`, of attribute sets:
 ```nix
 {
   path = "hash.cc";
-  src = ./src/libutil/hash.cc;
+  src = ./src/libutil/hash.cc;  # null for a generated unit
   includes = { "include/nix/util/hash.hh" = ./src/libutil/include/nix/util/hash.hh; ... };
+  generatedIncludes = [ "parser-tab.hh" ... ];  # generated files the unit includes
   externalIncludes = [ "openssl/sha.h" "sodium.h" ... ];
 }
 ```
