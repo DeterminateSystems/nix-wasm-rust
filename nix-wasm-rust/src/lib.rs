@@ -292,15 +292,18 @@ impl Value {
 
     /// Read a file. The `read_file_v2` host function writes into a buffer it
     /// allocates in the guest through `nix_wasm_alloc`, so that the file is
-    /// read and copied only once.
+    /// read and copied only once. It returns the buffer pointer in the low
+    /// 32 bits and the length in the high 32 bits, since a function
+    /// returning multiple Wasm values cannot be imported from Rust.
     pub fn read_file(&self) -> Vec<u8> {
         extern "C" {
-            fn read_file_v2(value: ValueId, len_out: *mut u32) -> *mut u8;
+            fn read_file_v2(value: ValueId) -> u64;
         }
         unsafe {
-            let mut len: u32 = 0;
-            let ptr = read_file_v2(self.0, &mut len);
-            Vec::from_raw_parts(ptr, len as usize, len as usize)
+            let packed = read_file_v2(self.0);
+            let ptr = packed as u32 as *mut u8;
+            let len = (packed >> 32) as usize;
+            Vec::from_raw_parts(ptr, len, len)
         }
     }
 
