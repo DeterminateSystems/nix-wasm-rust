@@ -31,13 +31,21 @@ enum Resolution {
     External(String),
 }
 
+/// What is extracted from a file's contents.
+struct Parsed {
+    includes: Vec<Include>,
+    /// The known macros (see `Defines`) that occur in the file, so that
+    /// a compilation unit can be told which macros it is sensitive to.
+    used_defines: Vec<String>,
+}
+
 struct FileInfo {
     source: Source,
-    /// The `#include` directives of this file, parsed lazily the first
-    /// time the file is reached from a compilation unit, so that only
-    /// files that are actually needed are read. Unused for generated
-    /// files, which delegate to their source.
-    includes: OnceCell<Vec<Include>>,
+    /// The contents of this file, parsed lazily the first time the file
+    /// is reached from a compilation unit, so that only files that are
+    /// actually needed are read. Unused for generated files, which
+    /// delegate to their source.
+    parsed: OnceCell<Parsed>,
     /// The resolved `#include`s, computed once per file rather than once
     /// per unit reaching it.
     resolved: OnceCell<Vec<Resolution>>,
@@ -47,7 +55,7 @@ impl FileInfo {
     fn new(value: Value) -> Self {
         FileInfo {
             source: Source::Real(value),
-            includes: OnceCell::new(),
+            parsed: OnceCell::new(),
             resolved: OnceCell::new(),
         }
     }
@@ -55,7 +63,7 @@ impl FileInfo {
     fn generated(from: String) -> Self {
         FileInfo {
             source: Source::Generated { from },
-            includes: OnceCell::new(),
+            parsed: OnceCell::new(),
             resolved: OnceCell::new(),
         }
     }
@@ -64,15 +72,58 @@ impl FileInfo {
 /// Index of all known files, keyed by their path relative to the root namespace.
 type Index = BTreeMap<String, FileInfo>;
 
-/// The `#include`s of an indexed file.
-fn includes_of<'a>(index: &'a Index, path: &str, defines: &Defines) -> &'a [Include] {
+/// What a unit's macro sensitivity is computed against: the macros to
+/// track (see `trackedDefines`), with their Nix values passed through.
+type Tracked = BTreeMap<String, Value>;
+
+/// The parsed contents of an indexed file.
+fn parsed_of<'a>(index: &'a Index, path: &str, defines: &Defines, tracked: &Tracked) -> &'a Parsed {
     let file = &index[path];
     match &file.source {
         Source::Real(value) => file
-            .includes
-            .get_or_init(|| extract_includes(&value.read_file(), defines)),
-        Source::Generated { from } => includes_of(index, from, defines),
+            .parsed
+            .get_or_init(|| parse_file(&value.read_file(), defines, tracked)),
+        Source::Generated { from } => parsed_of(index, from, defines, tracked),
     }
+}
+
+fn parse_file(contents: &[u8], defines: &Defines, tracked: &Tracked) -> Parsed {
+    Parsed {
+        includes: extract_includes(contents, defines),
+        used_defines: find_used_defines(contents, tracked),
+    }
+}
+
+/// The tracked macros that occur in `contents`, found by scanning for
+/// identifiers. Comments and strings are not skipped: this may report a
+/// macro that is only mentioned, but never misses one that is used.
+fn find_used_defines(contents: &[u8], tracked: &Tracked) -> Vec<String> {
+    let mut used = BTreeSet::new();
+    let mut i = 0;
+    while i < contents.len() {
+        let c = contents[i];
+        if c.is_ascii_alphabetic() || c == b'_' {
+            let start = i;
+            while i < contents.len() && (contents[i].is_ascii_alphanumeric() || contents[i] == b'_')
+            {
+                i += 1;
+            }
+            if let Ok(ident) = std::str::from_utf8(&contents[start..i]) {
+                if tracked.contains_key(ident) {
+                    used.insert(ident.to_string());
+                }
+            }
+        } else if c.is_ascii_digit() {
+            // Skip numbers (and their suffixes) so that e.g. `0xFF` is not an identifier.
+            while i < contents.len() && (contents[i].is_ascii_alphanumeric() || contents[i] == b'_')
+            {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    used.into_iter().collect()
 }
 
 #[no_mangle]
@@ -101,6 +152,13 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             .into_iter()
             .collect(),
     };
+
+    // Macros whose use is reported per unit, with their values (which may
+    // be anything, including null for "undefined"; they are passed through).
+    let tracked: Tracked = args
+        .get_attr("trackedDefines")
+        .map(|v| v.get_attrset())
+        .unwrap_or_default();
 
     // Build the file index by scanning the roots and adding explicit files.
     let mut index = Index::new();
@@ -181,6 +239,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         let mut includes: BTreeMap<&str, Value> = BTreeMap::new();
         let mut generated: BTreeSet<&str> = BTreeSet::new();
         let mut external: BTreeSet<&str> = BTreeSet::new();
+        let mut used: BTreeSet<&str> = BTreeSet::new();
         let mut visited: HashSet<&str> = HashSet::new();
         visited.insert(source);
         collect_transitive_includes(
@@ -188,9 +247,11 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             &index,
             &include_dirs,
             &defines,
+            &tracked,
             &mut includes,
             &mut generated,
             &mut external,
+            &mut used,
             &mut visited,
         );
 
@@ -201,6 +262,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         let generated_values: Vec<Value> =
             generated.iter().map(|s| Value::make_string(s)).collect();
         let external_values: Vec<Value> = external.iter().map(|s| Value::make_string(s)).collect();
+        let used_attrs: Vec<(&str, Value)> = used.iter().map(|s| (*s, tracked[*s])).collect();
         let src = match &file.source {
             Source::Real(value) => *value,
             Source::Generated { .. } => Value::make_null(),
@@ -212,6 +274,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
             ("includes", Value::make_attrset(&include_attrs)),
             ("generatedIncludes", Value::make_list(&generated_values)),
             ("externalIncludes", Value::make_list(&external_values)),
+            ("usedDefines", Value::make_attrset(&used_attrs)),
         ]));
     }
 
@@ -251,14 +314,16 @@ fn resolved_includes_of<'a>(
     path: &str,
     include_dirs: &[String],
     defines: &Defines,
+    tracked: &Tracked,
 ) -> &'a [Resolution] {
     let file = &index[path];
     if let Source::Generated { from } = &file.source {
         // Generated files live next to their source, so resolve as it.
-        return resolved_includes_of(index, from, include_dirs, defines);
+        return resolved_includes_of(index, from, include_dirs, defines, tracked);
     }
     file.resolved.get_or_init(|| {
-        includes_of(index, path, defines)
+        parsed_of(index, path, defines, tracked)
+            .includes
             .iter()
             .filter_map(|inc| match resolve(index, include_dirs, path, inc) {
                 Some(resolved) => Some(Resolution::File(resolved)),
@@ -278,12 +343,21 @@ fn collect_transitive_includes<'a>(
     index: &'a Index,
     include_dirs: &[String],
     defines: &Defines,
+    tracked: &Tracked,
     includes: &mut BTreeMap<&'a str, Value>,
     generated: &mut BTreeSet<&'a str>,
     external: &mut BTreeSet<&'a str>,
+    used: &mut BTreeSet<&'a str>,
     visited: &mut HashSet<&'a str>,
 ) {
-    for resolution in resolved_includes_of(index, path, include_dirs, defines) {
+    used.extend(
+        parsed_of(index, path, defines, tracked)
+            .used_defines
+            .iter()
+            .map(String::as_str),
+    );
+
+    for resolution in resolved_includes_of(index, path, include_dirs, defines, tracked) {
         match resolution {
             Resolution::File(resolved) => {
                 let (resolved, file) = index.get_key_value(resolved.as_str()).unwrap();
@@ -303,9 +377,11 @@ fn collect_transitive_includes<'a>(
                     index,
                     include_dirs,
                     defines,
+                    tracked,
                     includes,
                     generated,
                     external,
+                    used,
                     visited,
                 );
             }
@@ -586,5 +662,35 @@ mod tests {
         assert_eq!(normalize("../x.hh"), "x.hh");
         assert_eq!(normalize("unix/"), "unix");
         assert_eq!(normalize(""), "");
+    }
+}
+
+#[cfg(test)]
+mod used_defines_tests {
+    use super::*;
+
+    #[test]
+    fn finds_used_defines() {
+        // The values are opaque here; only the names matter.
+        let tracked: Tracked = ["HAVE_FOO", "VERSION", "IS_STATIC"]
+            .into_iter()
+            .map(|k| (k.to_string(), Value::from_raw(1)))
+            .collect();
+        let source = "\
+#if HAVE_FOO
+int x = HAVE_FOOBAR; // HAVE_FOOBAR is a different macro
+#endif
+#ifndef IS_STATIC
+const char * v = VERSION_STRING; // a different identifier
+#endif
+int hex = 0xVERSION; /* a number, not an identifier */
+";
+        assert_eq!(
+            find_used_defines(source.as_bytes(), &tracked),
+            ["HAVE_FOO", "IS_STATIC"]
+        );
+        // A mention in a comment counts: this is an over-approximation.
+        assert_eq!(find_used_defines(b"// see VERSION", &tracked), ["VERSION"]);
+        assert!(find_used_defines(b"FOO_HAVE_FOO", &tracked).is_empty());
     }
 }

@@ -38,6 +38,11 @@ getDeps {
   defines = { __linux__ = "1"; HAVE_SECCOMP = "1"; };
   undefines = [ "_WIN32" "__APPLE__" ];
 
+  # Optional: macros to report the use of, per compilation unit, with their
+  # values (any type; passed through as is). A unit "uses" a macro if the
+  # identifier occurs in the unit or any file in its include closure.
+  trackedDefines = { HAVE_SECCOMP = 1; NIX_STORE_DIR = "/nix/store"; IS_STATIC = null; };
+
   # Optional: files generated at build time (e.g. by bison), mapped to the
   # real file whose #includes they are assumed to inherit. They are not
   # read; the build has to provide them.
@@ -54,6 +59,7 @@ The result is a list, sorted by `path`, of attribute sets:
   includes = { "include/nix/util/hash.hh" = ./src/libutil/include/nix/util/hash.hh; ... };
   generatedIncludes = [ "parser-tab.hh" ... ];  # generated files the unit includes
   externalIncludes = [ "openssl/sha.h" "sodium.h" ... ];
+  usedDefines = { HAVE_FOO = 1; ... };  # the entries of `trackedDefines` occurring in the unit or its includes
 }
 ```
 
