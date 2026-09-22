@@ -1,5 +1,16 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
+/// Allocate a buffer for the host to write into (e.g. for `read_file_v2`).
+/// The host returns the pointer to the guest, which reconstructs the `Vec`
+/// with the length the host provides, so the capacity must equal `size`.
+#[no_mangle]
+pub extern "C" fn nix_wasm_alloc(size: usize) -> *mut u8 {
+    let mut buf = Vec::<u8>::with_capacity(size);
+    let ptr = buf.as_mut_ptr();
+    std::mem::forget(buf);
+    ptr
+}
+
 #[no_mangle]
 pub extern "C" fn nix_wasm_init_v1() {
     std::panic::set_hook(Box::new(|panic_info| {
@@ -279,23 +290,20 @@ impl Value {
         unsafe { make_app(self.0, args.as_ptr(), args.len()) }
     }
 
+    /// Read a file. The `read_file_v2` host function writes into a buffer it
+    /// allocates in the guest through `nix_wasm_alloc`, so that the file is
+    /// read and copied only once. It returns the buffer pointer in the low
+    /// 32 bits and the length in the high 32 bits, since a function
+    /// returning multiple Wasm values cannot be imported from Rust.
     pub fn read_file(&self) -> Vec<u8> {
         extern "C" {
-            fn read_file(value: ValueId, ptr: *mut u8, max_len: usize) -> usize;
+            fn read_file_v2(value: ValueId) -> u64;
         }
         unsafe {
-            // Optimistically call with a small buffer on the stack.
-            let mut buf = [0; 1024];
-            let len = read_file(self.0, buf.as_mut_ptr(), buf.len());
-            if len > buf.len() {
-                // If it didn't fit, allocate a buffer of the right size.
-                let mut buf = vec![0; len];
-                let len2 = read_file(self.0, buf.as_mut_ptr(), buf.len());
-                assert!(len2 == len);
-                buf
-            } else {
-                buf[0..len].to_vec()
-            }
+            let packed = read_file_v2(self.0);
+            let ptr = packed as u32 as *mut u8;
+            let len = (packed >> 32) as usize;
+            Vec::from_raw_parts(ptr, len, len)
         }
     }
 

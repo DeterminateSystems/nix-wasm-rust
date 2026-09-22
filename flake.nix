@@ -3,7 +3,8 @@
 
   inputs = {
     nixpkgs.follows = "nix/nixpkgs";
-    nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/3";
+    #nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/3";
+    nix.url = github:DeterminateSystems/nix-src/main; # FIXME
   };
 
   outputs =
@@ -149,6 +150,7 @@
               buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs --exclude nix-wasm-plugin-fib-wasi";
 
               checkPhase = ''
+                export XDG_CACHE_HOME=$TMPDIR
                 for i in nix-wasm-plugin-*/tests/*.nix; do
                   echo "running test $i..."
                   base="$(dirname $i)/$(basename $i .nix)"
