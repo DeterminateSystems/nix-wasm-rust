@@ -150,6 +150,7 @@
               buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs --exclude nix-wasm-plugin-fib-wasi";
 
               checkPhase = ''
+                export XDG_CACHE_HOME=$TMPDIR
                 for i in nix-wasm-plugin-*/tests/*.nix; do
                   echo "running test $i..."
                   base="$(dirname $i)/$(basename $i .nix)"
