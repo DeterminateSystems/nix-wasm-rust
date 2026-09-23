@@ -167,6 +167,11 @@
                 if [[ -n $nix_wasi_plugins ]]; then
                   cp $nix_wasi_plugins/*.wasm $out/
                 fi
+                # The nix-make scanner is also published as a flake (e.g. on
+                # FlakeHub), so that it can be used as a flake input.
+                mkdir -p $out/nix-wasm-module-make
+                mv $out/nix_wasm_plugin_nix_make.wasm $out/nix-wasm-module-make/
+                cp nix-wasm-module-make/flake.nix $out/nix-wasm-module-make/
               '';
 
               nativeBuildInputs = [
