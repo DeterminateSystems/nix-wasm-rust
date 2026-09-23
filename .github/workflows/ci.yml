@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      # Temporarily, to test publishing nix-wasm-module-make.
+      - nix-make
 
 permissions:
   id-token: "write"
@@ -38,3 +40,25 @@ jobs:
           visibility: "public"
           rolling: true
           include-output-paths: true
+
+      # The nix-make dependency scanner is also published as a flake of its
+      # own, DeterminateSystems/nix-wasm-module-make, so that it can be used
+      # as a flake input without checking the Wasm module into the consuming
+      # repository. flakehub-push publishes the git tree (via `nix flake
+      # prefetch`), so the built flake directory (the module and its flake.nix)
+      # is staged, not committed, to get it included.
+      - name: Stage the nix-wasm-module-make flake
+        if: matrix.os == 'ubuntu-latest' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/nix-make')
+        run: |
+          nix build .#nix-wasm-plugins --out-link result
+          cp -r result/nix-wasm-module-make/. nix-wasm-module-make/
+          git add -f nix-wasm-module-make
+
+      - name: Publish nix-wasm-module-make to FlakeHub
+        if: matrix.os == 'ubuntu-latest' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/nix-make')
+        uses: DeterminateSystems/flakehub-push@main
+        with:
+          name: "DeterminateSystems/nix-wasm-module-make"
+          directory: "nix-wasm-module-make"
+          visibility: "public"
+          rolling: true
