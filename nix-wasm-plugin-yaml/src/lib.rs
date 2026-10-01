@@ -47,8 +47,8 @@ fn to_yaml(v: Value) -> Yaml {
         Type::Null => Yaml::Null,
         Type::Attrs => Yaml::Hash(
             v.get_attrset()
-                .into_iter()
-                .map(|(key, value)| (Yaml::String(key), to_yaml(value)))
+                .iter()
+                .map(|(key, value)| (Yaml::String(key.to_string()), to_yaml(value)))
                 .collect(),
         ),
         Type::List => Yaml::Array(v.get_list().into_iter().map(to_yaml).collect::<Vec<_>>()),

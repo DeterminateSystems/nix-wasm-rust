@@ -1,7 +1,6 @@
 use std::{
     alloc::{alloc, dealloc, handle_alloc_error, Layout},
-    collections::BTreeMap,
-    mem::{align_of, size_of_val},
+    mem::{align_of, size_of, size_of_val},
     path::PathBuf,
 };
 
@@ -238,34 +237,13 @@ impl Value {
         unsafe { make_attrset(attrs.as_ptr(), attrs.len()) }
     }
 
-    /// Decode the buffer written by the `get_attrset` host function: the
-    /// number of attributes `n`, then `n` value IDs, then `n` null-terminated
-    /// attribute names. The buffer is aligned to 4 bytes.
-    fn decode_attrset(buf: &[u8]) -> BTreeMap<String, Value> {
-        let (prefix, ints, _) = unsafe { buf.align_to::<ValueId>() };
-        assert!(prefix.is_empty());
-        let n = ints[0] as usize;
-        let values = &ints[1..=n];
-        let names = &buf[size_of_val(&ints[0..=n])..];
-        values
-            .iter()
-            .zip(names.split(|b| *b == 0))
-            .map(|(value, name)| {
-                (
-                    String::from_utf8(name.to_vec()).expect("Nix attribute name should be UTF-8."),
-                    Value(*value),
-                )
-            })
-            .collect()
-    }
-
     /// Get the attributes of an attrset. The `get_attrset` host function
     /// returns all value IDs and attribute names in a single buffer. It uses
     /// the buffer we pass if that's large enough, and otherwise allocates one
     /// in the guest through `nix_wasm_alloc`. It returns the pointer of the
     /// buffer it used in the low 32 bits and the number of bytes written in
     /// the high 32 bits.
-    pub fn get_attrset(&self) -> BTreeMap<String, Value> {
+    pub fn get_attrset(&self) -> AttrSet {
         extern "C" {
             fn get_attrset(value: ValueId, ptr: *mut u8, len: usize) -> u64;
         }
@@ -275,17 +253,15 @@ impl Value {
             let mut buf: [ValueId; 256] = [0; 256];
             let buf_ptr = buf.as_mut_ptr() as *mut u8;
             let packed = get_attrset(self.0, buf_ptr, size_of_val(&buf));
-            let ptr = packed as u32 as *mut u8;
+            let mut ptr = packed as u32 as *mut u8;
             let len = (packed >> 32) as usize;
-            let res = Self::decode_attrset(std::slice::from_raw_parts(ptr, len));
-            if ptr != buf_ptr {
-                // It didn't fit, so the host allocated a buffer of the right size.
-                dealloc(
-                    ptr,
-                    Layout::from_size_align_unchecked(len, align_of::<ValueId>()),
-                );
+            if ptr == buf_ptr {
+                // It fit, so copy it into a heap buffer of the right size.
+                // This avoids a callback to `nix_wasm_alloc` from the host.
+                ptr = nix_wasm_alloc(len, align_of::<ValueId>());
+                std::ptr::copy_nonoverlapping(buf_ptr, ptr, len);
             }
-            res
+            AttrSet { ptr, len }
         }
     }
 
@@ -339,3 +315,95 @@ impl Value {
         unsafe { return_to_nix(self.0) }
     }
 }
+
+/// A read-only attribute set. This wraps the buffer returned by the
+/// `get_attrset` host function: the number of attributes `n`, then `n`
+/// value IDs, then `n` null-terminated attribute names, in lexicographically
+/// sorted order. The buffer is aligned to 4 bytes and was allocated through
+/// `nix_wasm_alloc`.
+pub struct AttrSet {
+    ptr: *mut u8,
+    /// The size of the buffer in bytes.
+    len: usize,
+}
+
+impl AttrSet {
+    /// The number of attributes.
+    pub fn len(&self) -> usize {
+        unsafe { *(self.ptr as *const u32) as usize }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn values(&self) -> &[Value] {
+        // `Value` is a transparent wrapper around `ValueId`.
+        unsafe { std::slice::from_raw_parts((self.ptr as *const Value).add(1), self.len()) }
+    }
+
+    fn names(&self) -> &[u8] {
+        let buf = unsafe { std::slice::from_raw_parts(self.ptr, self.len) };
+        &buf[(1 + self.len()) * size_of::<ValueId>()..]
+    }
+
+    /// Iterate over the attribute names and values, in lexicographically
+    /// sorted order of the names.
+    pub fn iter(&self) -> AttrSetIter<'_> {
+        AttrSetIter {
+            values: self.values().iter(),
+            names: self.names(),
+        }
+    }
+}
+
+impl Drop for AttrSet {
+    fn drop(&mut self) {
+        unsafe {
+            dealloc(
+                self.ptr,
+                Layout::from_size_align_unchecked(self.len, align_of::<ValueId>()),
+            );
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a AttrSet {
+    type Item = (&'a str, Value);
+    type IntoIter = AttrSetIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+pub struct AttrSetIter<'a> {
+    values: std::slice::Iter<'a, Value>,
+    /// The null-terminated names of the remaining attributes.
+    names: &'a [u8],
+}
+
+impl<'a> Iterator for AttrSetIter<'a> {
+    type Item = (&'a str, Value);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = *self.values.next()?;
+        let end = self
+            .names
+            .iter()
+            .position(|b| *b == 0)
+            .expect("attribute name should be null-terminated");
+        let name = &self.names[..end];
+        self.names = &self.names[end + 1..];
+        Some((
+            std::str::from_utf8(name).expect("Nix attribute name should be UTF-8."),
+            value,
+        ))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.values.size_hint()
+    }
+}
+
+impl ExactSizeIterator for AttrSetIter<'_> {}
