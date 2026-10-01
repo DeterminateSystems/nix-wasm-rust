@@ -1,13 +1,26 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    alloc::{alloc, dealloc, handle_alloc_error, Layout},
+    collections::BTreeMap,
+    mem::{align_of, size_of_val},
+    path::PathBuf,
+};
 
-/// Allocate a buffer for the host to write into (e.g. for `read_file_v2`).
-/// The host returns the pointer to the guest, which reconstructs the `Vec`
-/// with the length the host provides, so the capacity must equal `size`.
+/// Allocate a buffer for the host to write into (e.g. for `read_file_v2`
+/// and `get_attrset`). The host returns the pointer to the guest, which
+/// must free it with the same size and alignment (e.g. by reconstructing a
+/// `Vec<u8>` if `align` is 1).
 #[no_mangle]
-pub extern "C" fn nix_wasm_alloc(size: usize) -> *mut u8 {
-    let mut buf = Vec::<u8>::with_capacity(size);
-    let ptr = buf.as_mut_ptr();
-    std::mem::forget(buf);
+pub extern "C" fn nix_wasm_alloc(size: usize, align: usize) -> *mut u8 {
+    let layout = Layout::from_size_align(size, align).expect("invalid allocation request");
+    if size == 0 {
+        // Zero-sized allocations are not allowed, so return a dangling
+        // (but aligned) pointer.
+        return align as *mut u8;
+    }
+    let ptr = unsafe { alloc(layout) };
+    if ptr.is_null() {
+        handle_alloc_error(layout);
+    }
     ptr
 }
 
@@ -225,42 +238,54 @@ impl Value {
         unsafe { make_attrset(attrs.as_ptr(), attrs.len()) }
     }
 
-    fn get_attrset_from_attrs(&self, attrs: &[(ValueId, usize)]) -> BTreeMap<String, Value> {
-        extern "C" {
-            fn copy_attrname(value: ValueId, attr_idx: usize, ptr: *mut u8, len: usize);
-        }
-        let mut res = BTreeMap::new();
-        for (attr_idx, (value, attr_len)) in attrs.iter().enumerate() {
-            let mut buf = vec![0; *attr_len];
-            unsafe {
-                copy_attrname(self.0, attr_idx, buf.as_mut_ptr(), *attr_len);
-            }
-            res.insert(
-                String::from_utf8(buf).expect("Nix attribute name should be UTF-8."),
-                Value(*value),
-            );
-        }
-        res
+    /// Decode the buffer written by the `get_attrset` host function: the
+    /// number of attributes `n`, then `n` value IDs, then `n` null-terminated
+    /// attribute names. The buffer is aligned to 4 bytes.
+    fn decode_attrset(buf: &[u8]) -> BTreeMap<String, Value> {
+        let (prefix, ints, _) = unsafe { buf.align_to::<ValueId>() };
+        assert!(prefix.is_empty());
+        let n = ints[0] as usize;
+        let values = &ints[1..=n];
+        let names = &buf[size_of_val(&ints[0..=n])..];
+        values
+            .iter()
+            .zip(names.split(|b| *b == 0))
+            .map(|(value, name)| {
+                (
+                    String::from_utf8(name.to_vec()).expect("Nix attribute name should be UTF-8."),
+                    Value(*value),
+                )
+            })
+            .collect()
     }
 
+    /// Get the attributes of an attrset. The `get_attrset` host function
+    /// returns all value IDs and attribute names in a single buffer. It uses
+    /// the buffer we pass if that's large enough, and otherwise allocates one
+    /// in the guest through `nix_wasm_alloc`. It returns the pointer of the
+    /// buffer it used in the low 32 bits and the number of bytes written in
+    /// the high 32 bits.
     pub fn get_attrset(&self) -> BTreeMap<String, Value> {
         extern "C" {
-            #[allow(improper_ctypes)]
-            fn copy_attrset(value: ValueId, ptr: *mut (ValueId, usize), max_len: usize) -> usize;
+            fn get_attrset(value: ValueId, ptr: *mut u8, len: usize) -> u64;
         }
         unsafe {
-            // Optimistically call with a small buffer on the stack.
-            let mut buf = [(0, 0); 32];
-            let len = copy_attrset(self.0, buf.as_mut_ptr(), buf.len());
-            if len > buf.len() {
-                // If it didn't fit, allocate a buffer of the right size.
-                let mut buf = vec![(0, 0); len];
-                let len2 = copy_attrset(self.0, buf.as_mut_ptr(), buf.len());
-                assert!(len2 == len);
-                self.get_attrset_from_attrs(&buf)
-            } else {
-                self.get_attrset_from_attrs(&buf[0..len])
+            // Optimistically call with a small buffer on the stack. It has
+            // to be aligned for `ValueId`s.
+            let mut buf: [ValueId; 256] = [0; 256];
+            let buf_ptr = buf.as_mut_ptr() as *mut u8;
+            let packed = get_attrset(self.0, buf_ptr, size_of_val(&buf));
+            let ptr = packed as u32 as *mut u8;
+            let len = (packed >> 32) as usize;
+            let res = Self::decode_attrset(std::slice::from_raw_parts(ptr, len));
+            if ptr != buf_ptr {
+                // It didn't fit, so the host allocated a buffer of the right size.
+                dealloc(
+                    ptr,
+                    Layout::from_size_align_unchecked(len, align_of::<ValueId>()),
+                );
             }
+            res
         }
     }
 
