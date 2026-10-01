@@ -237,6 +237,12 @@ impl Value {
         unsafe { make_attrset(attrs.as_ptr(), attrs.len()) }
     }
 
+    /// Like `make_attrset`, but takes anything that can be iterated as
+    /// `(&str, Value)` pairs.
+    pub fn make_attrset_from_iter<'a>(attrs: impl IntoIterator<Item = (&'a str, Value)>) -> Value {
+        Self::make_attrset(&attrs.into_iter().collect::<Vec<_>>())
+    }
+
     /// Get the attributes of an attrset. The `get_attrset` host function
     /// returns all value IDs and attribute names in a single buffer. It uses
     /// the buffer we pass if that's large enough, and otherwise allocates one
