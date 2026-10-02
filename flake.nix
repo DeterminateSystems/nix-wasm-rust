@@ -3,8 +3,7 @@
 
   inputs = {
     nixpkgs.follows = "nix/nixpkgs";
-    #nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/3";
-    nix.url = github:DeterminateSystems/nix-src/wasm-api; # FIXME
+    nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/3.23";
   };
 
   outputs =
