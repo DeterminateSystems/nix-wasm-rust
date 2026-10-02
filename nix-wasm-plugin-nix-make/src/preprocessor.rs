@@ -94,7 +94,10 @@ fn tokenize(s: &str) -> Vec<Token> {
                 i += 1;
             }
             tokens.push(parse_number(&s[start..i]));
-        } else if let Some(op) = OPS.iter().find(|op| s[i..].starts_with(*op)) {
+        } else if let Some(op) = OPS
+            .iter()
+            .find(|op| bytes[i..].starts_with(op.as_bytes()))
+        {
             tokens.push(Token::Op(op));
             i += op.len();
         } else {
@@ -483,6 +486,9 @@ mod tests {
         assert_eq!(eval("0 && SIZEOF(int) == 4"), None);
         // ...unlike an unknown macro, which is a valid operand.
         assert_eq!(eval("0 && UNKNOWN == 4"), Some(false));
+        // Non-ASCII characters are unknown tokens.
+        assert_eq!(eval("é"), None);
+        assert_eq!(eval("0 && é == 4"), None);
     }
 
     #[test]
