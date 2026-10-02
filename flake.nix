@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.follows = "nix/nixpkgs";
-    nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/3";
+    nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/3.23";
   };
 
   outputs =
@@ -149,6 +149,8 @@
               buildPhase = "cargo build --release --workspace --exclude nix-wasm-plugin-quickjs --exclude nix-wasm-plugin-fib-wasi";
 
               checkPhase = ''
+                export XDG_CACHE_HOME=$TMPDIR
+
                 cargo test -p nix-wasm-plugin-nix-make --target ${stdenv.hostPlatform.rust.rustcTarget}
 
                 for i in nix-wasm-plugin-*/tests/*.nix; do

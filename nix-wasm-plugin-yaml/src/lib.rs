@@ -10,18 +10,13 @@ fn yaml_to_value(yaml: &Yaml) -> Value {
         Yaml::Array(array) => {
             Value::make_list(&array.iter().map(yaml_to_value).collect::<Vec<_>>())
         }
-        Yaml::Hash(hash) => Value::make_attrset(
-            &hash
-                .iter()
-                .map(|(key, value)| {
-                    let key: &str = match &key {
-                        Yaml::String(s) => s,
-                        _ => panic!("non-string YAML keys are not supported, in: {:?}", key),
-                    };
-                    (key, yaml_to_value(value))
-                })
-                .collect::<Vec<_>>(),
-        ),
+        Yaml::Hash(hash) => Value::make_attrset_from_iter(hash.iter().map(|(key, value)| {
+            let key: &str = match &key {
+                Yaml::String(s) => s,
+                _ => panic!("non-string YAML keys are not supported, in: {:?}", key),
+            };
+            (key, yaml_to_value(value))
+        })),
         Yaml::Null => Value::make_null(),
         _ => panic!("unimplemented YAML value: {:?}", yaml),
     }
@@ -47,8 +42,8 @@ fn to_yaml(v: Value) -> Yaml {
         Type::Null => Yaml::Null,
         Type::Attrs => Yaml::Hash(
             v.get_attrset()
-                .into_iter()
-                .map(|(key, value)| (Yaml::String(key), to_yaml(value)))
+                .iter()
+                .map(|(key, value)| (Yaml::String(key.to_string()), to_yaml(value)))
                 .collect(),
         ),
         Type::List => Yaml::Array(v.get_list().into_iter().map(to_yaml).collect::<Vec<_>>()),

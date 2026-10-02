@@ -20,8 +20,8 @@ pub extern "C" fn grep(args: Value) -> Value {
 }
 
 fn recurse(read_dir: &Value, pattern: &str, path_val: &Value, matches: &mut Vec<Value>) {
-    for (name, file_type) in read_dir.call(&[*path_val]).get_attrset() {
-        let child = path_val.make_path(&name);
+    for (name, file_type) in &read_dir.call(&[*path_val]).get_attrset() {
+        let child = path_val.make_path(name);
         let file_type = file_type.get_string();
         match file_type.as_str() {
             "regular" => {

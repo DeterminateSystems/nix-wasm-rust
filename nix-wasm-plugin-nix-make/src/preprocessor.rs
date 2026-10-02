@@ -7,9 +7,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-pub struct Defines {
+pub struct Defines<'a> {
     /// Macros known to be defined, with their value.
-    pub defined: HashMap<String, String>,
+    pub defined: HashMap<&'a str, String>,
     /// Macros known to be undefined.
     pub undefined: HashSet<String>,
 }
@@ -127,7 +127,7 @@ fn parse_number(s: &str) -> Token {
 struct Parser<'a> {
     tokens: &'a [Token],
     pos: usize,
-    defines: &'a Defines,
+    defines: &'a Defines<'a>,
 }
 
 impl<'a> Parser<'a> {
@@ -384,7 +384,7 @@ impl ConditionalStack {
 mod tests {
     use super::*;
 
-    fn defines() -> Defines {
+    fn defines() -> Defines<'static> {
         Defines {
             defined: [
                 ("__linux__", "1"),
@@ -395,7 +395,7 @@ mod tests {
                 ("NAME", "\"nix\""),
             ]
             .into_iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k, v.to_string()))
             .collect(),
             undefined: ["_WIN32", "__APPLE__"]
                 .into_iter()

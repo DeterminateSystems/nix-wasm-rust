@@ -47,11 +47,9 @@ fn js_value_to_nix(value: JsValue) -> Value {
             let (key, value) = entry.unwrap_or_else(|err| fail("object iteration", err));
             entries.push((key, js_value_to_nix(value)));
         }
-        let attrs: Vec<(&str, Value)> = entries
-            .iter()
-            .map(|(key, value)| (key.as_str(), *value))
-            .collect();
-        return Value::make_attrset(&attrs);
+        return Value::make_attrset_from_iter(
+            entries.iter().map(|(key, value)| (key.as_str(), *value)),
+        );
     }
 
     warn!("quickjs value type not supported: {:?}", value.type_of());

@@ -7,7 +7,7 @@ mod preprocessor;
 use nix_wasm_rust::{warn, Value};
 use preprocessor::{eval_condition, ConditionalStack, Defines};
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// An `#include` directive: the included path and whether it used angle brackets.
 struct Include {
@@ -137,16 +137,13 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         get_string_list(&args, "sourceExtensions").expect("missing 'sourceExtensions' argument");
 
     // Macros known to be defined or undefined, for evaluating conditionals.
+    let defines_attrs = args.get_attr("defines").map(|v| v.get_attrset());
     let defines = Defines {
-        defined: args
-            .get_attr("defines")
-            .map(|v| {
-                v.get_attrset()
-                    .into_iter()
-                    .map(|(k, v)| (k, v.get_string()))
-                    .collect::<HashMap<_, _>>()
-            })
-            .unwrap_or_default(),
+        defined: defines_attrs
+            .iter()
+            .flatten()
+            .map(|(k, v)| (k, v.get_string()))
+            .collect(),
         undefined: get_string_list(&args, "undefines")
             .unwrap_or_default()
             .into_iter()
@@ -157,7 +154,12 @@ pub extern "C" fn getDeps(args: Value) -> Value {
     // be anything, including null for "undefined"; they are passed through).
     let tracked: Tracked = args
         .get_attr("trackedDefines")
-        .map(|v| v.get_attrset())
+        .map(|v| {
+            v.get_attrset()
+                .iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect()
+        })
         .unwrap_or_default();
 
     // Build the file index by scanning the roots and adding explicit files.
@@ -176,14 +178,14 @@ pub extern "C" fn getDeps(args: Value) -> Value {
     }
 
     if let Some(files) = args.get_attr("files") {
-        for (name, value) in files.get_attrset() {
+        for (name, value) in &files.get_attrset() {
             index.insert(normalize(&name), FileInfo::new(value));
         }
     }
 
     // Files generated at build time, which inherit the includes of their source.
     if let Some(generated) = args.get_attr("generated") {
-        for (name, from) in generated.get_attrset() {
+        for (name, from) in &generated.get_attrset() {
             let from = normalize(&from.get_string());
             if !matches!(
                 index.get(&from),
@@ -294,7 +296,7 @@ fn has_extension(name: &str, extensions: &[String]) -> bool {
 /// Add every regular file under `dir` to the index. Files are not read here;
 /// see `FileInfo::includes`.
 fn scan_files(read_dir: &Value, dir: &Value, prefix: &str, index: &mut Index) {
-    for (name, file_type) in read_dir.call(&[*dir]).get_attrset() {
+    for (name, file_type) in &read_dir.call(&[*dir]).get_attrset() {
         let child = dir.make_path(&name);
         let path = join(prefix, &name);
         match file_type.get_string().as_str() {
@@ -549,11 +551,11 @@ fn strip_comments(line: &str) -> String {
 mod tests {
     use super::*;
 
-    fn defines() -> Defines {
+    fn defines() -> Defines<'static> {
         Defines {
             defined: [("__linux__", "1"), ("HAVE_FOO", "0")]
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .map(|(k, v)| (k, v.to_string()))
                 .collect(),
             undefined: ["_WIN32"].into_iter().map(str::to_string).collect(),
         }
