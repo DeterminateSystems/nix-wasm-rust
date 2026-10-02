@@ -70,7 +70,7 @@
               '';
               workspaceVendor = rustPlatform.fetchCargoVendor {
                 src = self;
-                hash = "sha256-vkTdv3StxslmBOKy8mFfz5afOiMjBujFd4IU6pkgqGc=";
+                hash = "sha256-7+qf/W+ZAPWWghAzF33RDBLwZUrA51USjkGujXBRF4U=";
               };
               stdlibVendor = rustPlatform.fetchCargoVendor {
                 src = rustPlatform.rustcSrc;
@@ -150,6 +150,9 @@
 
               checkPhase = ''
                 export XDG_CACHE_HOME=$TMPDIR
+
+                cargo test -p nix-wasm-plugin-nix-make --target ${stdenv.hostPlatform.rust.rustcTarget}
+
                 for i in nix-wasm-plugin-*/tests/*.nix; do
                   echo "running test $i..."
                   base="$(dirname $i)/$(basename $i .nix)"
@@ -166,6 +169,11 @@
                 if [[ -n $nix_wasi_plugins ]]; then
                   cp $nix_wasi_plugins/*.wasm $out/
                 fi
+                # The nix-make scanner is also published as a flake (e.g. on
+                # FlakeHub), so that it can be used as a flake input.
+                mkdir -p $out/nix-wasm-module-make
+                mv $out/nix_wasm_plugin_nix_make.wasm $out/nix-wasm-module-make/
+                cp nix-wasm-module-make/flake.nix $out/nix-wasm-module-make/
               '';
 
               nativeBuildInputs = [

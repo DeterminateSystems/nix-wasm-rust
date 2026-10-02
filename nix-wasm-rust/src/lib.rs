@@ -54,7 +54,7 @@ macro_rules! warn {
 
 // FIXME: use externref for Values?
 #[repr(transparent)]
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 pub struct Value(ValueId);
 
 type ValueId = u32;
