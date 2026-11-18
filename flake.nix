@@ -70,7 +70,7 @@
               '';
               workspaceVendor = rustPlatform.fetchCargoVendor {
                 src = self;
-                hash = "sha256-7+qf/W+ZAPWWghAzF33RDBLwZUrA51USjkGujXBRF4U=";
+                hash = "sha256-S1Pm9MV8x4ljNVCbnIX5iLxyseiPMNKhniMew5vdD8Y=";
               };
               stdlibVendor = rustPlatform.fetchCargoVendor {
                 src = rustPlatform.rustcSrc;

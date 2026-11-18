@@ -10,6 +10,7 @@ members = [
     "nix-wasm-plugin-quickjs",
     "nix-wasm-plugin-grep",
     "nix-wasm-plugin-nix-make",
+    "nix-wasm-plugin-jsonschema",
 ]
 resolver = "2"
 
