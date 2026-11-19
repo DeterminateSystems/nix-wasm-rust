@@ -1,0 +1,1 @@
+{"errors":[{"instancePath":"","message":"\"name\" is a required property","schemaPath":"/required"},{"instancePath":"/age","message":"-5 is less than the minimum of 0","schemaPath":"/properties/age/minimum"}],"valid":false}
