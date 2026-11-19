@@ -1,6 +1,6 @@
 # `nix-wasm-plugin-nix-make`
 
-An `#include` dependency scanner for using Nix as a C/C++ build system, where every compilation unit is a separate derivation. It computes, at evaluation time, the transitive closure of `#include`s of each source file so that exactly the required headers can be passed as inputs to the derivation that compiles it. See `packaging/nix-make` in the Nix repository for the Nix side.
+An `#include` and `#embed` dependency scanner for using Nix as a C/C++ build system, where every compilation unit is a separate derivation. It computes, at evaluation time, the transitive closure of `#include`s of each source file (and the files they `#embed`) so that exactly the required files can be passed as inputs to the derivation that compiles it. See `packaging/nix-make` in the Nix repository for the Nix side.
 
 ## Usage
 
@@ -20,6 +20,10 @@ getDeps {
 
   # Include search path (relative to the prefix namespace), in order.
   includeDirs = [ "" "include" "unix" "unix/include" ];
+
+  # Optional: search path for `#embed` (relative to the prefix namespace),
+  # in order, like the compiler's `--embed-dir`.
+  embedDirs = [ "assets" ];
 
   # Extra index entries, e.g. generated headers or out-of-tree sources.
   files = { "include/nix/util/config.hh" = builtins.toFile "config.hh" "..."; };
@@ -56,8 +60,8 @@ The result is a list, sorted by `path`, of attribute sets:
 {
   path = "hash.cc";
   src = ./src/libutil/hash.cc;  # null for a generated unit
-  includes = { "include/nix/util/hash.hh" = ./src/libutil/include/nix/util/hash.hh; ... };
-  generatedIncludes = [ "parser-tab.hh" ... ];  # generated files the unit includes
+  includes = { "include/nix/util/hash.hh" = ./src/libutil/include/nix/util/hash.hh; ... };  # included and embedded files
+  generatedIncludes = [ "parser-tab.hh" ... ];  # generated files the unit includes or embeds
   externalIncludes = [ "openssl/sha.h" "sodium.h" ... ];
   usedDefines = { HAVE_FOO = 1; ... };  # the entries of `trackedDefines` occurring in the unit or its includes
 }
@@ -66,5 +70,7 @@ The result is a list, sorted by `path`, of attribute sets:
 Every regular file under the roots is indexed, but a file is only read and parsed for `#include`s once it is reached from a compilation unit, so files that no unit needs (e.g. headers for other platforms) are never read.
 
 Includes are resolved like a compiler does: `#include "x"` is first looked up relative to the including file's directory, then in each of `includeDirs`; `#include <x>` only in `includeDirs`. Angle-bracket includes that are not found in the index are reported in `externalIncludes` so the caller can map them to external dependencies. Quoted includes that cannot be resolved produce a warning.
+
+`#embed` directives (C23/C++26) are resolved like the compiler does too: `#embed "x"` is first looked up relative to the embedding file's directory, then in each of `embedDirs`; `#embed <x>` only in `embedDirs`. Note that `includeDirs` is not searched. The embedded file is reported in `includes` (or `generatedIncludes`) along with the headers, since the compiler needs it in the same way, but it is data rather than source: it is not read, so it contributes no includes or `usedDefines` of its own. Embedded files that cannot be resolved produce a warning. Embed parameters such as `limit(...)` are ignored.
 
 Preprocessor conditionals (`#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`) are evaluated against the macros in `defines` (an attribute set of macro names to values) and `undefines` (a list of macro names known to be undefined). A condition that cannot be decided from these keeps both branches, so the result is always an over-approximation of what the compiler will include. For example, with `undefines = [ "_WIN32" ]`, an include guarded by `#ifdef _WIN32` is skipped, while one guarded by `#if __GNUC__ >= 12` is kept unless `__GNUC__` is given.
