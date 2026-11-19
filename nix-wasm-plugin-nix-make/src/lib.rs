@@ -1,4 +1,4 @@
-//! `#include` dependency scanner for using Nix as a C/C++ build system.
+//! `#include` and `#embed` dependency scanner for using Nix as a C/C++ build system.
 //!
 //! See README.md for the argument and result schema of `getDeps`.
 
@@ -9,10 +9,16 @@ use preprocessor::{eval_condition, ConditionalStack, Defines};
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-/// An `#include` directive: the included path and whether it used angle brackets.
+/// An `#include` or `#embed` directive: the path it names and whether it
+/// used angle brackets.
 struct Include {
     path: String,
     angle: bool,
+    /// Whether this is an `#embed` (C23/C++26) rather than an `#include`.
+    /// An embedded file is an input of the unit like a header, but it is
+    /// arbitrary data: it is found via a different search path and is
+    /// never parsed.
+    embed: bool,
 }
 
 enum Source {
@@ -23,10 +29,12 @@ enum Source {
     Generated { from: String },
 }
 
-/// Where an `#include` directive points to.
+/// Where an `#include` or `#embed` directive points to.
 enum Resolution {
-    /// A file in the index.
+    /// An included file in the index.
     File(String),
+    /// An embedded file in the index.
+    Embed(String),
     /// An angle-bracket include not found in the index.
     External(String),
 }
@@ -46,8 +54,8 @@ struct FileInfo {
     /// actually needed are read. Unused for generated files, which
     /// delegate to their source.
     parsed: OnceCell<Parsed>,
-    /// The resolved `#include`s, computed once per file rather than once
-    /// per unit reaching it.
+    /// The resolved `#include`s and `#embed`s, computed once per file
+    /// rather than once per unit reaching it.
     resolved: OnceCell<Vec<Resolution>>,
 }
 
@@ -200,11 +208,18 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         }
     }
 
-    let include_dirs: Vec<String> = get_string_list(&args, "includeDirs")
-        .unwrap_or_default()
-        .iter()
-        .map(|d| normalize(d))
-        .collect();
+    let search_path = SearchPath {
+        include_dirs: get_string_list(&args, "includeDirs")
+            .unwrap_or_default()
+            .iter()
+            .map(|d| normalize(d))
+            .collect(),
+        embed_dirs: get_string_list(&args, "embedDirs")
+            .unwrap_or_default()
+            .iter()
+            .map(|d| normalize(d))
+            .collect(),
+    };
 
     // The compilation units: either given explicitly, or every indexed
     // file with a source extension. In both cases minus `excludeSources`.
@@ -247,7 +262,7 @@ pub extern "C" fn getDeps(args: Value) -> Value {
         collect_transitive_includes(
             source,
             &index,
-            &include_dirs,
+            &search_path,
             &defines,
             &tracked,
             &mut includes,
@@ -310,25 +325,41 @@ fn scan_files(read_dir: &Value, dir: &Value, prefix: &str, index: &mut Index) {
     }
 }
 
-/// The resolved `#include`s of an indexed file, memoized per file.
+/// Where the files named by directives are looked up, besides the
+/// directory of the file containing a quoted directive.
+struct SearchPath {
+    /// For `#include` (like `-I`).
+    include_dirs: Vec<String>,
+    /// For `#embed` (like `--embed-dir`).
+    embed_dirs: Vec<String>,
+}
+
+/// The resolved `#include`s and `#embed`s of an indexed file, memoized per file.
 fn resolved_includes_of<'a>(
     index: &'a Index,
     path: &str,
-    include_dirs: &[String],
+    search_path: &SearchPath,
     defines: &Defines,
     tracked: &Tracked,
 ) -> &'a [Resolution] {
     let file = &index[path];
     if let Source::Generated { from } = &file.source {
         // Generated files live next to their source, so resolve as it.
-        return resolved_includes_of(index, from, include_dirs, defines, tracked);
+        return resolved_includes_of(index, from, search_path, defines, tracked);
     }
     file.resolved.get_or_init(|| {
         parsed_of(index, path, defines, tracked)
             .includes
             .iter()
-            .filter_map(|inc| match resolve(index, include_dirs, path, inc) {
+            .filter_map(|inc| match resolve(index, search_path, path, inc) {
+                Some(resolved) if inc.embed => Some(Resolution::Embed(resolved)),
                 Some(resolved) => Some(Resolution::File(resolved)),
+                // There are no "external" embedded files: unlike system
+                // headers, nothing else can provide them.
+                None if inc.embed => {
+                    warn!("{path}: embedded file not found: {inc}", inc = inc.path);
+                    None
+                }
                 None if inc.angle => Some(Resolution::External(inc.path.clone())),
                 None => {
                     warn!("{path}: included file not found: {inc}", inc = inc.path);
@@ -340,10 +371,12 @@ fn resolved_includes_of<'a>(
 }
 
 /// Walk the include graph from `path`, collecting every file reached.
+/// Embedded files are collected too, but they are leaves: their contents
+/// are data, so they are not read.
 fn collect_transitive_includes<'a>(
     path: &str,
     index: &'a Index,
-    include_dirs: &[String],
+    search_path: &SearchPath,
     defines: &Defines,
     tracked: &Tracked,
     includes: &mut BTreeMap<&'a str, Value>,
@@ -359,7 +392,7 @@ fn collect_transitive_includes<'a>(
             .map(String::as_str),
     );
 
-    for resolution in resolved_includes_of(index, path, include_dirs, defines, tracked) {
+    for resolution in resolved_includes_of(index, path, search_path, defines, tracked) {
         match resolution {
             Resolution::File(resolved) => {
                 let (resolved, file) = index.get_key_value(resolved.as_str()).unwrap();
@@ -377,7 +410,7 @@ fn collect_transitive_includes<'a>(
                 collect_transitive_includes(
                     resolved,
                     index,
-                    include_dirs,
+                    search_path,
                     defines,
                     tracked,
                     includes,
@@ -387,6 +420,19 @@ fn collect_transitive_includes<'a>(
                     visited,
                 );
             }
+            Resolution::Embed(resolved) => {
+                // Not marked as visited: that would stop a later
+                // `#include` of the same file from being followed.
+                let (resolved, file) = index.get_key_value(resolved.as_str()).unwrap();
+                match &file.source {
+                    Source::Real(value) => {
+                        includes.insert(resolved, *value);
+                    }
+                    Source::Generated { .. } => {
+                        generated.insert(resolved);
+                    }
+                }
+            }
             Resolution::External(inc) => {
                 external.insert(inc);
             }
@@ -394,12 +440,13 @@ fn collect_transitive_includes<'a>(
     }
 }
 
-/// Resolve an `#include` the way a compiler would: quoted includes are
-/// first looked up relative to the including file's directory, then (like
-/// angle-bracket includes) in each include directory in order.
+/// Resolve an `#include` or `#embed` the way a compiler would: quoted
+/// ones are first looked up relative to the including file's directory,
+/// then (like angle-bracket ones) in each directory of the search path
+/// in order. `#embed` has a search path of its own.
 fn resolve(
     index: &Index,
-    include_dirs: &[String],
+    search_path: &SearchPath,
     includer: &str,
     inc: &Include,
 ) -> Option<String> {
@@ -409,7 +456,12 @@ fn resolve(
             return Some(candidate);
         }
     }
-    for dir in include_dirs {
+    let dirs = if inc.embed {
+        &search_path.embed_dirs
+    } else {
+        &search_path.include_dirs
+    };
+    for dir in dirs {
         let candidate = normalize(&join(dir, &inc.path));
         if index.contains_key(&candidate) {
             return Some(candidate);
@@ -476,7 +528,9 @@ fn extract_includes(contents: &[u8], defines: &Defines) -> Vec<Include> {
             "elifndef" => conditionals.elif(eval_condition(&format!("!defined({rest})"), defines)),
             "else" => conditionals.else_(),
             "endif" => conditionals.pop(),
-            "include" if conditionals.active() => {
+            // An `#embed` may have parameters (e.g. `limit(4)`) after the
+            // file name, which don't affect what file is needed.
+            "include" | "embed" if conditionals.active() => {
                 let (close, angle) = match rest.chars().next() {
                     Some('"') => ('"', false),
                     Some('<') => ('>', true),
@@ -486,6 +540,7 @@ fn extract_includes(contents: &[u8], defines: &Defines) -> Vec<Include> {
                     includes.push(Include {
                         path: rest[1..1 + end].to_string(),
                         angle,
+                        embed: name == "embed",
                     });
                 }
             }
@@ -565,13 +620,90 @@ mod tests {
         extract_includes(source.as_bytes(), &defines())
             .into_iter()
             .map(|inc| {
+                let directive = if inc.embed { "embed " } else { "" };
                 if inc.angle {
-                    format!("<{}>", inc.path)
+                    format!("{directive}<{}>", inc.path)
                 } else {
-                    format!("\"{}\"", inc.path)
+                    format!("{directive}\"{}\"", inc.path)
                 }
             })
             .collect()
+    }
+
+    #[test]
+    fn embeds() {
+        let source = "\
+#include \"a.hh\"
+const char data[] = {
+#embed \"data.bin\"
+};
+const char sys[] = {
+#  embed <sys.bin> limit(4) prefix(0, ) // comment
+};
+#ifdef _WIN32
+#embed \"win.bin\"
+#endif
+#if __has_embed(\"maybe.bin\")
+#embed \"maybe.bin\"
+#endif
+";
+        assert_eq!(
+            includes(source),
+            [
+                "\"a.hh\"",
+                "embed \"data.bin\"",
+                "embed <sys.bin>",
+                "embed \"maybe.bin\""
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_embeds() {
+        // Only the keys of the index matter for resolution.
+        let index: Index = [
+            "src/a.cc",
+            "src/data.bin",
+            "src/sub/x.nix",
+            "include/data.bin",
+            "include/only-include.bin",
+            "assets/data.bin",
+            "assets/only-embed.bin",
+        ]
+        .into_iter()
+        .map(|path| (path.to_string(), FileInfo::new(Value::from_raw(1))))
+        .collect();
+        let search_path = SearchPath {
+            include_dirs: vec!["include".to_string()],
+            embed_dirs: vec!["assets".to_string()],
+        };
+        let resolve = |path: &str, angle, embed| {
+            resolve(
+                &index,
+                &search_path,
+                "src/a.cc",
+                &Include {
+                    path: path.to_string(),
+                    angle,
+                    embed,
+                },
+            )
+        };
+        let some = |s: &str| Some(s.to_string());
+
+        // Quoted: relative to the includer first, then the embed directories.
+        assert_eq!(resolve("data.bin", false, true), some("src/data.bin"));
+        assert_eq!(resolve("sub/x.nix", false, true), some("src/sub/x.nix"));
+        assert_eq!(
+            resolve("only-embed.bin", false, true),
+            some("assets/only-embed.bin")
+        );
+        // Angle brackets: only the embed directories.
+        assert_eq!(resolve("data.bin", true, true), some("assets/data.bin"));
+        // The include directories are not searched for embeds, nor vice versa.
+        assert_eq!(resolve("only-include.bin", false, true), None);
+        assert_eq!(resolve("only-embed.bin", false, false), None);
+        assert_eq!(resolve("data.bin", true, false), some("include/data.bin"));
     }
 
     #[test]
